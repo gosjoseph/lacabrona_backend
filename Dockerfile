@@ -21,6 +21,7 @@ RUN pip install --upgrade pip \
 
 # Copy application code
 COPY app ./app
+COPY integrations ./integrations
 
 EXPOSE 8000
 

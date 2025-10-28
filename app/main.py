@@ -1,6 +1,10 @@
 from fastapi import FastAPI
+from integrations.MongoDB.router import router as mongo_router
 
 app = FastAPI(title="Lacabrona API", version="0.1.0")
+
+
+app.include_router(mongo_router)
 
 
 @app.get("/")
