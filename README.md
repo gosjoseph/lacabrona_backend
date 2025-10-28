@@ -23,6 +23,7 @@ Minimal FastAPI backend + React frontend runnable with Docker Compose.
 - The service runs with Uvicorn --reload and mounts ./app into the container for hot reloads.
 - To stop:
   docker compose down
+ - Compose expects the frontend at a sibling path: ../lacabrona-frontend
 
 ## Project layout
 
@@ -30,4 +31,4 @@ Minimal FastAPI backend + React frontend runnable with Docker Compose.
 - requirements.txt: Python dependencies
 - Dockerfile: Backend container build instructions
 - docker-compose.yml: Local dev runtime configuration (backend + frontend)
-- lacabrona-frontend: React + MUI app
+- lacabrona-frontend: React + MUI app (sibling folder to this backend, path: ../lacabrona-frontend)
