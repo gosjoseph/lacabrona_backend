@@ -15,12 +15,3 @@ services:
     volumes:
       - ./app:/app/app:cached
     restart: unless-stopped
-  frontend:
-    build:
-      context: ../lacabrona-frontend
-    container_name: lacabrona-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - api
-    restart: unless-stopped
