@@ -155,7 +155,9 @@ class Customer(BaseModel):
 
     id: Optional[str] = None
     email: Optional[EmailStr] = None
-    name: Optional[str] = None
+    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     supertokens_user_id: Optional[str] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow)
