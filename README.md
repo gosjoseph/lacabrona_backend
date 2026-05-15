@@ -1,34 +1,37 @@
-# Lacabrona Backup API
+# La Cabrona — Backend (FastAPI)
 
-Minimal FastAPI backend + React frontend runnable with Docker Compose.
+REST API powering the customer website and the operations console.
 
-## Prerequisites
+## Endpoints
 
-- Docker engine via Rancher Desktop (or Docker Desktop)
-- Git repo checked out locally
+- `GET /api/categories` — menu categories
+- `GET /api/menu` (optional `?category=`) — menu items
+- `GET /api/inventory` — stock items
+- `POST /api/inventory/{id}/adjust` — `{ "delta": -1 }` to subtract stock
+- `GET /api/orders` (optional `?status=new|preparing|ready|served`)
+- `POST /api/orders` — create order
+- `PATCH /api/orders/{id}/status` — advance order state
+- `GET /api/reservations` (optional `?date=YYYY-MM-DD`)
+- `POST /api/reservations` — create reservation
 
-## How to run
+## Env vars
 
-1. From the repo root:
-   docker compose up --build
-2. Open the Frontend:
-   - App: http://localhost:3000/
-3. Open the API:
-   - Root: http://localhost:8000/
-   - Docs (Swagger UI): http://localhost:8000/docs
-   - Health: http://localhost:8000/healthz
+- `MONGO_URL` — Mongo connection string (default `mongodb://localhost:27017`)
+- `MONGO_DB` — database name (default `lacabrona`)
+- `CORS_ORIGINS` — comma-separated list (default dev origins)
 
-## Development tips
+## Run locally
 
-- The service runs with Uvicorn --reload and mounts ./app into the container for hot reloads.
-- To stop:
-  docker compose down
- - Compose expects the frontend at a sibling path: ../lacabrona-frontend
+```bash
+pip install -r requirements.txt
+MONGO_URL=mongodb://localhost:27017 uvicorn app.main:app --reload
+```
 
-## Project layout
+Or via the combined docker-compose at the frontend repo:
 
-- app/main.py: FastAPI application entrypoint (app.main:app)
-- requirements.txt: Python dependencies
-- Dockerfile: Backend container build instructions
-- docker-compose.yml: Local dev runtime configuration (backend + frontend)
-- lacabrona-frontend: React + MUI app (sibling folder to this backend, path: ../lacabrona-frontend)
+```bash
+cd ../lacabrona_frontend && docker compose up --build
+```
+
+Then visit http://localhost:5173 (customer site), http://localhost:5173/ops (console)
+and http://localhost:8000/docs (API).
