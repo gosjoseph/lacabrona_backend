@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 
+from app.core.utils import strip_mongo_id
 from app.modules.menu.repository import MenuRepository
 from app.modules.menu.schema import MenuItemCreate, MenuItemUpdate
 
@@ -23,7 +24,7 @@ class MenuService:
             raise HTTPException(409, "Menu item already exists")
         data = body.model_dump()
         self.repository.insert(data)
-        return data
+        return strip_mongo_id(data)
 
     def update_item(self, item_id: str, body: MenuItemUpdate) -> dict:
         updates = body.model_dump(exclude_none=True)
@@ -31,7 +32,7 @@ class MenuService:
             raise HTTPException(400, "No fields to update")
         if not self.repository.update(item_id, updates):
             raise HTTPException(404, "Menu item not found")
-        return self.repository.find_by_id(item_id)
+        return self.get_item(item_id)
 
     def delete_item(self, item_id: str) -> None:
         if not self.repository.delete(item_id):

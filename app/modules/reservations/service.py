@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from app.core.utils import strip_mongo_id
 from app.modules.reservations.model import Reservation
 from app.modules.reservations.repository import ReservationRepository
 from app.modules.reservations.schema import ReservationCreate, ReservationUpdate
@@ -34,7 +35,7 @@ class ReservationService:
         reservation = Reservation(id=self._next_id(), **body.model_dump())
         data = reservation.model_dump()
         self.repository.insert(data)
-        return data
+        return strip_mongo_id(data)
 
     def update_reservation(self, reservation_id: str, body: ReservationUpdate) -> dict:
         updates = body.model_dump(exclude_none=True)
@@ -42,7 +43,7 @@ class ReservationService:
             raise HTTPException(400, "No fields to update")
         if not self.repository.update(reservation_id, updates):
             raise HTTPException(404, "Reservation not found")
-        return self.repository.find_by_id(reservation_id)
+        return self.get_reservation(reservation_id)
 
     def delete_reservation(self, reservation_id: str) -> None:
         if not self.repository.delete(reservation_id):

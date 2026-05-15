@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 
+from app.core.utils import strip_mongo_id
 from app.modules.categories.repository import CategoryRepository
 from app.modules.categories.schema import CategoryCreate, CategoryUpdate
 
@@ -22,7 +23,7 @@ class CategoryService:
             raise HTTPException(409, "Category already exists")
         data = body.model_dump()
         self.repository.insert(data)
-        return data
+        return strip_mongo_id(data)
 
     def update_category(self, category_id: str, body: CategoryUpdate) -> dict:
         data = body.model_dump()

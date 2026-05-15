@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
-from app.core.utils import utcnow
+from app.core.utils import strip_mongo_id, utcnow
 from app.modules.orders.model import Order
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schema import OrderCreate, OrderStatusUpdate
@@ -41,12 +41,12 @@ class OrderService:
         )
         data = order.model_dump()
         self.repository.insert(data)
-        return data
+        return strip_mongo_id(data)
 
     def set_status(self, order_id: str, body: OrderStatusUpdate) -> dict:
         if not self.repository.update_status(order_id, body.status):
             raise HTTPException(404, "Order not found")
-        return self.repository.find_by_id(order_id)
+        return self.get_order(order_id)
 
     def delete_order(self, order_id: str) -> None:
         if not self.repository.delete(order_id):
