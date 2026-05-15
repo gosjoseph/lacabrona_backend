@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ---------- Categories ----------
@@ -143,3 +143,33 @@ class ReservationUpdate(BaseModel):
     status: Optional[ReservationStatus] = None
     phone: Optional[str] = None
     note: Optional[str] = None
+
+
+# ---------- Auth: customers & employees ----------
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Customer(BaseModel):
+    """Customer profile authenticated via SuperTokens ThirdParty (Google)."""
+
+    id: Optional[str] = None
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    supertokens_user_id: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class Employee(BaseModel):
+    """Staff/admin user authenticated via SuperTokens ThirdParty (Google)."""
+
+    id: Optional[str] = None
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    role: str = "admin"
+    supertokens_user_id: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
