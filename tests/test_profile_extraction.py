@@ -7,7 +7,7 @@ fallback.
 
 from __future__ import annotations
 
-from app.auth.profile import extract_profile_from_raw_info
+from app.modules.auth.profile import extract_profile_from_raw_info
 
 
 def test_uses_given_and_family_name_when_both_present():
