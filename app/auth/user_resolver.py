@@ -5,24 +5,31 @@ spinning up the core or constructing SDK response objects.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class UnknownUserError(Exception):
-    """Raised when a Google signin email is in neither customers nor employees."""
+    """Raised when a Google signin email is missing entirely."""
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def resolve_user_type(email: str, supertokens_user_id: str, db: Any) -> Dict[str, str]:
-    """Look up `email` in customers then employees.
+def resolve_user_type(
+    email: str,
+    supertokens_user_id: str,
+    db: Any,
+    profile: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Link the Google signin to an existing record or create a new customer.
 
-    On match: persist `supertokens_user_id` on the document (idempotent) and
-    return `{"user_type": "customer"|"employee", "internal_id": str}`.
+    - Existing customer: stamp `supertokens_user_id` (name fields untouched).
+    - Existing employee: stamp `supertokens_user_id` (employee linking path).
+    - Neither: create a new customer document using `profile`
+      (`full_name`, `first_name`, `last_name`) and return its id.
 
-    If no match: raise `UnknownUserError`.
+    Raises `UnknownUserError` only when `email` is empty.
     """
     if not email:
         raise UnknownUserError("Google signin did not return an email")
@@ -55,6 +62,17 @@ def resolve_user_type(email: str, supertokens_user_id: str, db: Any) -> Dict[str
             "role": employee.get("role", "admin"),
         }
 
-    raise UnknownUserError(
-        f"Email {email} is not registered as a customer or employee"
-    )
+    profile = profile or {}
+    now = _utcnow()
+    new_doc = {
+        "email": email,
+        "full_name": profile.get("full_name", ""),
+        "first_name": profile.get("first_name", ""),
+        "last_name": profile.get("last_name", ""),
+        "supertokens_user_id": supertokens_user_id,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = db.customers.insert_one(new_doc)
+    return {"user_type": "customer", "internal_id": str(result.inserted_id)}

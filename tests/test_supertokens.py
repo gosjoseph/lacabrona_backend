@@ -69,11 +69,11 @@ def test_override_resolves_employee_by_email(mongo_test_db):
     assert stored["supertokens_user_id"] == "st-user-employee"
 
 
-def test_override_rejects_unknown_email(mongo_test_db):
-    """An email in neither collection must raise UnknownUserError."""
+def test_override_rejects_empty_email(mongo_test_db):
+    """An empty/missing email must raise UnknownUserError."""
     with pytest.raises(UnknownUserError):
         resolve_user_type(
-            email="extrano@example.com",
+            email="",
             supertokens_user_id="st-user-unknown",
             db=mongo_test_db,
         )
