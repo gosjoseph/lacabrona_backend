@@ -4,7 +4,8 @@ Drive `_attach_internal_claims` end-to-end against a mongomock database,
 covering the new-customer creation path and the existing-customer linking
 path. The override extracts `raw_user_info_from_provider` from the response
 and routes it through the user resolver, so we build a minimal stand-in
-response object and patch `app.db.get_db` to return the mongomock fixture.
+response object and patch `app.core.database.get_db` to return the mongomock
+fixture.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.auth import supertokens_init
+from app.modules.auth import supertokens
 
 
 def _make_response(
@@ -42,8 +43,8 @@ def _make_response(
 
 @pytest.fixture
 def patch_get_db(monkeypatch, mongo_test_db):
-    """Route `app.db.get_db` to the in-memory mongomock database."""
-    import app.db as db_module
+    """Route `app.core.database.get_db` to the in-memory mongomock database."""
+    import app.core.database as db_module
 
     monkeypatch.setattr(db_module, "get_db", lambda: mongo_test_db)
     return mongo_test_db
@@ -62,7 +63,7 @@ async def test_new_customer_signinup_persists_name_from_google(patch_get_db):
         },
     )
 
-    await supertokens_init._attach_internal_claims(response)
+    await supertokens._attach_internal_claims(response)
 
     stored = db.customers.find_one({"email": "lucia@ex.com"})
     assert stored is not None
@@ -92,7 +93,7 @@ async def test_existing_customer_signinup_does_not_overwrite_name(patch_get_db):
         },
     )
 
-    await supertokens_init._attach_internal_claims(response)
+    await supertokens._attach_internal_claims(response)
 
     stored = db.customers.find_one({"email": "adrian@ex.com"})
     assert stored is not None

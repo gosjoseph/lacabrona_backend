@@ -13,14 +13,12 @@ from typing import Optional
 
 
 def _clean(value: object) -> str:
-    """Return `value` as a stripped string, or "" if it isn't usable."""
     if not isinstance(value, str):
         return ""
     return value.strip()
 
 
 def _from_given_family(source: dict) -> Optional[dict]:
-    """Rule (a): both given_name and family_name present and non-empty."""
     given = _clean(source.get("given_name"))
     family = _clean(source.get("family_name"))
     if given and family:
@@ -33,13 +31,10 @@ def _from_given_family(source: dict) -> Optional[dict]:
 
 
 def _from_full_name(source: dict) -> Optional[dict]:
-    """Rule (b): `name` present and non-empty; split on first whitespace."""
     name = _clean(source.get("name"))
     if not name:
         return None
     head, _, tail = name.partition(" ")
-    # `partition` only handles the first space; any further leading whitespace
-    # in `tail` is stripped so multi-space inputs collapse cleanly.
     return {
         "full_name": name,
         "first_name": head.strip(),

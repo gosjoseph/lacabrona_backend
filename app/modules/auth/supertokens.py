@@ -1,10 +1,9 @@
 """SuperTokens SDK initialisation for the La Cabrona backend.
 
-Mirrors the urbanoweb_backend pattern: ThirdParty (Google) + Session, with a
-sign_in_up_post override that maps the email returned by Google to either a
-customer or employee record in MongoDB and stamps the SuperTokens user id on
-the matched document. If the email is in neither collection, the override
-rejects the signin.
+ThirdParty (Google) + Session, with a sign_in_up_post override that maps the
+email returned by Google to either a customer or employee record in MongoDB
+and stamps the SuperTokens user id on the matched document. Unknown emails
+trigger creation of a new customer using the real name from Google.
 
 Init is a no-op when ENVIRONMENT=test so tests don't need a real core.
 """
@@ -15,9 +14,10 @@ import logging
 import os
 from typing import Any
 
-from app.config import settings
-from app.auth.profile import extract_profile_from_raw_info
-from app.auth.user_resolver import UnknownUserError, resolve_user_type
+from app.core.config import settings
+from app.modules.auth.exceptions import UnknownUserError
+from app.modules.auth.profile import extract_profile_from_raw_info
+from app.modules.auth.service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -112,21 +112,17 @@ def init_supertokens() -> None:
 
 
 async def _attach_internal_claims(response: Any) -> None:
-    """Link the signed-in email to a customer/employee, merge session claims.
-
-    For an unknown email a new customer is created using the real name
-    returned by Google (extracted from `raw_user_info_from_provider`).
-    """
-    from app.db import get_db
+    """Link the signed-in email to a customer/employee, merge session claims."""
+    from app.core.database import get_db
 
     email = response.user.emails[0] if response.user.emails else None
     supertokens_user_id: str = response.user.id
 
     profile = _profile_from_response(response, email or "")
 
-    db = get_db()
+    auth_service = AuthService.from_db(get_db())
     try:
-        result = resolve_user_type(email or "", supertokens_user_id, db, profile)
+        result = auth_service.resolve_user_type(email or "", supertokens_user_id, profile)
     except UnknownUserError as exc:
         logger.warning("Rejecting Google signin: %s", exc)
         raise
@@ -142,11 +138,7 @@ async def _attach_internal_claims(response: Any) -> None:
 
 
 def _profile_from_response(response: Any, email: str) -> dict:
-    """Pull Google's raw user-info dicts off the response and extract a profile.
-
-    Defensive: the response, the `raw_user_info_from_provider` object, or its
-    attributes may be absent depending on tenant/provider configuration.
-    """
+    """Pull Google's raw user-info dicts off the response and extract a profile."""
     raw = getattr(response, "raw_user_info_from_provider", None)
     user_info_api = getattr(raw, "from_user_info_api", None) if raw is not None else None
     id_token_payload = getattr(raw, "from_id_token_payload", None) if raw is not None else None

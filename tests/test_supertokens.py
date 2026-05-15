@@ -11,16 +11,17 @@ import pytest
 from bson import ObjectId
 from fastapi.testclient import TestClient
 
-from app.auth import supertokens_init
-from app.auth.user_resolver import UnknownUserError, resolve_user_type
 from app.main import app
+from app.modules.auth import supertokens
+from app.modules.auth.exceptions import UnknownUserError
+from app.modules.auth.service import AuthService
 
 
 def test_supertokens_init_does_not_raise():
     """Importing the SuperTokens init module must not raise."""
-    assert supertokens_init is not None
+    assert supertokens is not None
     # Calling init() is a no-op under ENVIRONMENT=test; it must also not raise.
-    supertokens_init.init_supertokens()
+    supertokens.init_supertokens()
 
 
 def test_override_resolves_customer_by_email(mongo_test_db):
@@ -32,10 +33,10 @@ def test_override_resolves_customer_by_email(mongo_test_db):
         "name": "Cliente Uno",
     })
 
-    result = resolve_user_type(
+    auth_service = AuthService.from_db(mongo_test_db)
+    result = auth_service.resolve_user_type(
         email="cliente@lacabrona.uy",
         supertokens_user_id="st-user-customer",
-        db=mongo_test_db,
     )
 
     assert result["user_type"] == "customer"
@@ -55,10 +56,10 @@ def test_override_resolves_employee_by_email(mongo_test_db):
         "role": "admin",
     })
 
-    result = resolve_user_type(
+    auth_service = AuthService.from_db(mongo_test_db)
+    result = auth_service.resolve_user_type(
         email="staff@lacabrona.uy",
         supertokens_user_id="st-user-employee",
-        db=mongo_test_db,
     )
 
     assert result["user_type"] == "employee"
@@ -71,17 +72,17 @@ def test_override_resolves_employee_by_email(mongo_test_db):
 
 def test_override_rejects_empty_email(mongo_test_db):
     """An empty/missing email must raise UnknownUserError."""
+    auth_service = AuthService.from_db(mongo_test_db)
     with pytest.raises(UnknownUserError):
-        resolve_user_type(
+        auth_service.resolve_user_type(
             email="",
             supertokens_user_id="st-user-unknown",
-            db=mongo_test_db,
         )
 
 
 def test_health_endpoint_200_when_supertokens_up(httpx_mock):
     """Health endpoint returns 200 when the SuperTokens core responds."""
-    from app.config import settings
+    from app.core.config import settings
 
     httpx_mock.add_response(
         url=f"{settings.supertokens_core_url.rstrip('/')}/hello",
@@ -98,7 +99,7 @@ def test_health_endpoint_200_when_supertokens_up(httpx_mock):
 
 def test_health_endpoint_503_when_supertokens_down(httpx_mock):
     """Health endpoint returns 503 when the SuperTokens core is unreachable."""
-    from app.config import settings
+    from app.core.config import settings
 
     httpx_mock.add_exception(
         httpx.ConnectError("connection refused"),
