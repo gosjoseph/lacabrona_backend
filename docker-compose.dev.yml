@@ -1,0 +1,55 @@
+# Local development stack with live reload.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Edit any file under app/ and uvicorn --reload restarts the server
+# automatically — no rebuild needed.
+
+services:
+  backend:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: development
+      MONGO_URL: mongodb://mongo:27017
+      SUPERTOKENS_CORE_URL: http://supertokens:3567
+    volumes:
+      # Bind-mount the source so saved changes are seen instantly.
+      - ./app:/app/app
+    depends_on:
+      - mongo
+      - supertokens
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  supertokens-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: supertokens
+      POSTGRES_PASSWORD: supertokens
+      POSTGRES_DB: supertokens
+    volumes:
+      - supertokens_data:/var/lib/postgresql/data
+
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-postgresql
+    depends_on:
+      - supertokens-db
+    environment:
+      POSTGRESQL_CONNECTION_URI: postgresql://supertokens:supertokens@supertokens-db:5432/supertokens
+    ports:
+      - "3567:3567"
+
+volumes:
+  mongo_data:
+  supertokens_data:
