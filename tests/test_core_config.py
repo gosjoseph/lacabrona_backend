@@ -29,4 +29,4 @@ def test_default_supertokens_and_mongo_settings():
     assert s.mongo_url.startswith("mongodb://")
     assert s.mongo_db == "lacabrona"
     assert s.supertokens_app_name == "La Cabrona"
-    assert s.environment in {"development", "test", "production"}
+    assert s.environment in {"dev", "test", "prod"}

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
 
     # App
-    environment: str = "development"
+    environment: str = "dev"
 
     model_config = SettingsConfigDict(
         env_file=".env",
