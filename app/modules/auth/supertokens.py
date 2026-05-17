@@ -101,7 +101,7 @@ def init_supertokens() -> None:
                 override=thirdparty.InputOverrideConfig(apis=_override_thirdparty_apis),
             ),
             session.init(
-                cookie_secure=settings.environment == "production",
+                cookie_secure=settings.environment == "prod",
                 cookie_same_site="lax",
             ),
         ],
