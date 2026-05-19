@@ -26,16 +26,16 @@ def _payload(**overrides) -> dict:
 
 def test_create_assigns_first_id(api_client):
     client, _ = api_client
-    response = client.post("/api/reservations", json=_payload())
+    response = client.post("/api/v1/reservations", json=_payload())
     assert response.status_code == 201
     assert response.json()["id"] == "rs-2401"
 
 
 def test_create_assigns_incrementing_ids(api_client):
     client, _ = api_client
-    first = client.post("/api/reservations", json=_payload()).json()
+    first = client.post("/api/v1/reservations", json=_payload()).json()
     second = client.post(
-        "/api/reservations",
+        "/api/v1/reservations",
         json=_payload(time=datetime(2026, 5, 16, 20, 0, tzinfo=timezone.utc).isoformat()),
     ).json()
     assert first["id"] == "rs-2401"
@@ -45,14 +45,14 @@ def test_create_assigns_incrementing_ids(api_client):
 def test_list_returns_today_field_and_sorted_reservations(api_client):
     client, _ = api_client
     client.post(
-        "/api/reservations",
+        "/api/v1/reservations",
         json=_payload(time=datetime(2026, 6, 1, 21, 0, tzinfo=timezone.utc).isoformat()),
     )
     client.post(
-        "/api/reservations",
+        "/api/v1/reservations",
         json=_payload(time=datetime(2026, 6, 1, 19, 0, tzinfo=timezone.utc).isoformat()),
     )
-    response = client.get("/api/reservations")
+    response = client.get("/api/v1/reservations")
     assert response.status_code == 200
     body = response.json()
     assert "today" in body
@@ -63,14 +63,14 @@ def test_list_returns_today_field_and_sorted_reservations(api_client):
 def test_list_filters_by_date(api_client):
     client, _ = api_client
     client.post(
-        "/api/reservations",
+        "/api/v1/reservations",
         json=_payload(time=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc).isoformat()),
     )
     client.post(
-        "/api/reservations",
+        "/api/v1/reservations",
         json=_payload(time=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc).isoformat()),
     )
-    response = client.get("/api/reservations", params={"date": "2026-06-01"})
+    response = client.get("/api/v1/reservations", params={"date": "2026-06-01"})
     assert response.status_code == 200
     items = response.json()["reservations"]
     assert len(items) == 1
@@ -78,55 +78,55 @@ def test_list_filters_by_date(api_client):
 
 def test_list_invalid_date_returns_400(api_client):
     client, _ = api_client
-    response = client.get("/api/reservations", params={"date": "not-a-date"})
+    response = client.get("/api/v1/reservations", params={"date": "not-a-date"})
     assert response.status_code == 400
 
 
 def test_get_existing_reservation(api_client):
     client, _ = api_client
-    client.post("/api/reservations", json=_payload())
-    response = client.get("/api/reservations/rs-2401")
+    client.post("/api/v1/reservations", json=_payload())
+    response = client.get("/api/v1/reservations/rs-2401")
     assert response.status_code == 200
     assert response.json()["name"] == "Cliente"
 
 
 def test_get_missing_reservation_returns_404(api_client):
     client, _ = api_client
-    assert client.get("/api/reservations/rs-0").status_code == 404
+    assert client.get("/api/v1/reservations/rs-0").status_code == 404
 
 
 def test_update_partial_fields(api_client):
     client, _ = api_client
-    client.post("/api/reservations", json=_payload())
-    response = client.put("/api/reservations/rs-2401", json={"status": "confirmed"})
+    client.post("/api/v1/reservations", json=_payload())
+    response = client.put("/api/v1/reservations/rs-2401", json={"status": "confirmed"})
     assert response.status_code == 200
     assert response.json()["status"] == "confirmed"
 
 
 def test_update_with_no_fields_returns_400(api_client):
     client, _ = api_client
-    client.post("/api/reservations", json=_payload())
-    response = client.put("/api/reservations/rs-2401", json={})
+    client.post("/api/v1/reservations", json=_payload())
+    response = client.put("/api/v1/reservations/rs-2401", json={})
     assert response.status_code == 400
 
 
 def test_update_missing_returns_404(api_client):
     client, _ = api_client
-    response = client.put("/api/reservations/rs-0", json={"status": "confirmed"})
+    response = client.put("/api/v1/reservations/rs-0", json={"status": "confirmed"})
     assert response.status_code == 404
 
 
 def test_delete_existing_returns_204(api_client):
     client, db = api_client
-    client.post("/api/reservations", json=_payload())
-    response = client.delete("/api/reservations/rs-2401")
+    client.post("/api/v1/reservations", json=_payload())
+    response = client.delete("/api/v1/reservations/rs-2401")
     assert response.status_code == 204
     assert db.reservations.find_one({"id": "rs-2401"}) is None
 
 
 def test_delete_missing_returns_404(api_client):
     client, _ = api_client
-    assert client.delete("/api/reservations/rs-0").status_code == 404
+    assert client.delete("/api/v1/reservations/rs-0").status_code == 404
 
 
 def test_next_id_fallback_when_existing_id_unparseable(mongo_test_db):

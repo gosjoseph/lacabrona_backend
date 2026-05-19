@@ -5,7 +5,7 @@ from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schema import OrderCreate, OrderStatusUpdate
 from app.modules.orders.service import OrderService
 
-router = APIRouter(prefix="/api/orders", tags=["orders"])
+router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 
 def get_service() -> OrderService:

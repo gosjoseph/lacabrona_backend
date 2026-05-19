@@ -5,6 +5,9 @@ class EmployeeService:
     def __init__(self, repository: EmployeeRepository):
         self.repository = repository
 
+    def find_by_supertokens_id(self, supertokens_user_id: str) -> dict | None:
+        return self.repository.find_by_supertokens_id(supertokens_user_id)
+
     def link_to_supertokens(self, email: str, supertokens_user_id: str) -> dict | None:
         """Stamp the SuperTokens user id on an existing employee. Returns the doc or None."""
         existing = self.repository.find_by_email(email)

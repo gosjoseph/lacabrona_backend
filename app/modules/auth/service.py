@@ -31,6 +31,24 @@ class AuthService:
             employee_service=EmployeeService(EmployeeRepository(db)),
         )
 
+    def resolve_session_user(self, supertokens_user_id: str) -> Optional[dict]:
+        """Read-only lookup of the record linked to a SuperTokens user id.
+
+        Returns `{"user_type": "customer"|"employee", "doc": <mongo doc>}` or
+        `None` when no record is linked. Unlike `resolve_user_type`, this never
+        creates or mutates a document — it backs the `/auth/me` rehydration
+        endpoint, where the user already exists from a prior signin.
+        """
+        customer = self.customer_service.find_by_supertokens_id(supertokens_user_id)
+        if customer:
+            return {"user_type": "customer", "doc": customer}
+
+        employee = self.employee_service.find_by_supertokens_id(supertokens_user_id)
+        if employee:
+            return {"user_type": "employee", "doc": employee}
+
+        return None
+
     def resolve_user_type(
         self,
         email: str,

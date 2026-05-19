@@ -5,7 +5,7 @@ from app.modules.reservations.repository import ReservationRepository
 from app.modules.reservations.schema import ReservationCreate, ReservationUpdate
 from app.modules.reservations.service import ReservationService
 
-router = APIRouter(prefix="/api/reservations", tags=["reservations"])
+router = APIRouter(prefix="/api/v1/reservations", tags=["reservations"])
 
 
 def get_service() -> ReservationService:

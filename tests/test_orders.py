@@ -26,7 +26,7 @@ def _payload(**overrides) -> dict:
 
 def test_create_order_assigns_first_id_and_totals(api_client):
     client, _ = api_client
-    response = client.post("/api/orders", json=_payload())
+    response = client.post("/api/v1/orders", json=_payload())
     assert response.status_code == 201
     body = response.json()
     assert body["id"] == "ord-1001"
@@ -38,7 +38,7 @@ def test_create_order_assigns_first_id_and_totals(api_client):
 def test_create_order_includes_delivery_in_total(api_client):
     client, _ = api_client
     response = client.post(
-        "/api/orders",
+        "/api/v1/orders",
         json=_payload(channel="delivery", address="Calle 1", phone="099", delivery=80),
     )
     assert response.status_code == 201
@@ -49,17 +49,17 @@ def test_create_order_includes_delivery_in_total(api_client):
 
 def test_create_order_increments_id(api_client):
     client, _ = api_client
-    first = client.post("/api/orders", json=_payload()).json()
-    second = client.post("/api/orders", json=_payload()).json()
+    first = client.post("/api/v1/orders", json=_payload()).json()
+    second = client.post("/api/v1/orders", json=_payload()).json()
     assert first["id"] == "ord-1001"
     assert second["id"] == "ord-1002"
 
 
 def test_list_orders_returns_in_reverse_chronological_order(api_client):
     client, _ = api_client
-    client.post("/api/orders", json=_payload())
-    client.post("/api/orders", json=_payload())
-    response = client.get("/api/orders")
+    client.post("/api/v1/orders", json=_payload())
+    client.post("/api/v1/orders", json=_payload())
+    response = client.get("/api/v1/orders")
     assert response.status_code == 200
     orders = response.json()["orders"]
     assert len(orders) == 2
@@ -68,13 +68,13 @@ def test_list_orders_returns_in_reverse_chronological_order(api_client):
 
 def test_list_orders_filters_by_status(api_client):
     client, _ = api_client
-    client.post("/api/orders", json=_payload())
-    client.post("/api/orders", json=_payload())
+    client.post("/api/v1/orders", json=_payload())
+    client.post("/api/v1/orders", json=_payload())
     # Move one order to "preparing".
-    client.patch("/api/orders/ord-1001/status", json={"status": "preparing"})
+    client.patch("/api/v1/orders/ord-1001/status", json={"status": "preparing"})
 
-    new_only = client.get("/api/orders", params={"status": "new"}).json()["orders"]
-    prep_only = client.get("/api/orders", params={"status": "preparing"}).json()["orders"]
+    new_only = client.get("/api/v1/orders", params={"status": "new"}).json()["orders"]
+    prep_only = client.get("/api/v1/orders", params={"status": "preparing"}).json()["orders"]
 
     assert [o["id"] for o in new_only] == ["ord-1002"]
     assert [o["id"] for o in prep_only] == ["ord-1001"]
@@ -82,49 +82,49 @@ def test_list_orders_filters_by_status(api_client):
 
 def test_get_existing_order(api_client):
     client, _ = api_client
-    client.post("/api/orders", json=_payload())
-    response = client.get("/api/orders/ord-1001")
+    client.post("/api/v1/orders", json=_payload())
+    response = client.get("/api/v1/orders/ord-1001")
     assert response.status_code == 200
     assert response.json()["customer"] == "Anon"
 
 
 def test_get_missing_order_returns_404(api_client):
     client, _ = api_client
-    assert client.get("/api/orders/ord-9999").status_code == 404
+    assert client.get("/api/v1/orders/ord-9999").status_code == 404
 
 
 def test_set_status_updates_doc(api_client):
     client, _ = api_client
-    client.post("/api/orders", json=_payload())
-    response = client.patch("/api/orders/ord-1001/status", json={"status": "ready"})
+    client.post("/api/v1/orders", json=_payload())
+    response = client.patch("/api/v1/orders/ord-1001/status", json={"status": "ready"})
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
 
 
 def test_set_status_missing_returns_404(api_client):
     client, _ = api_client
-    response = client.patch("/api/orders/ord-9999/status", json={"status": "ready"})
+    response = client.patch("/api/v1/orders/ord-9999/status", json={"status": "ready"})
     assert response.status_code == 404
 
 
 def test_set_status_invalid_value_rejected_by_validation(api_client):
     client, _ = api_client
-    client.post("/api/orders", json=_payload())
-    response = client.patch("/api/orders/ord-1001/status", json={"status": "garbage"})
+    client.post("/api/v1/orders", json=_payload())
+    response = client.patch("/api/v1/orders/ord-1001/status", json={"status": "garbage"})
     assert response.status_code == 422
 
 
 def test_delete_existing_order(api_client):
     client, db = api_client
-    client.post("/api/orders", json=_payload())
-    response = client.delete("/api/orders/ord-1001")
+    client.post("/api/v1/orders", json=_payload())
+    response = client.delete("/api/v1/orders/ord-1001")
     assert response.status_code == 204
     assert db.orders.find_one({"id": "ord-1001"}) is None
 
 
 def test_delete_missing_order_returns_404(api_client):
     client, _ = api_client
-    assert client.delete("/api/orders/ord-9999").status_code == 404
+    assert client.delete("/api/v1/orders/ord-9999").status_code == 404
 
 
 # ---- service-level _next_order_id fallback path -------------------------
