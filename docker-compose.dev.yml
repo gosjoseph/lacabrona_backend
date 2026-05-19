@@ -15,7 +15,7 @@ services:
     env_file:
       - .env
     environment:
-      ENVIRONMENT: development
+      ENVIRONMENT: dev
       MONGO_URL: mongodb://mongo:27017
       SUPERTOKENS_CORE_URL: http://supertokens:3567
     volumes:
