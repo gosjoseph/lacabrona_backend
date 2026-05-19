@@ -9,6 +9,9 @@ class CustomerService:
     def find_by_email(self, email: str) -> dict | None:
         return self.repository.find_by_email(email)
 
+    def find_by_supertokens_id(self, supertokens_user_id: str) -> dict | None:
+        return self.repository.find_by_supertokens_id(supertokens_user_id)
+
     def ensure_linked_to_supertokens(
         self, customer_doc: dict, supertokens_user_id: str
     ) -> None:

@@ -25,17 +25,17 @@ def _payload(**overrides) -> dict:
 
 def test_list_categories_empty(api_client):
     client, _ = api_client
-    response = client.get("/api/categories")
+    response = client.get("/api/v1/categories")
     assert response.status_code == 200
     assert response.json() == []
 
 
 def test_create_then_list_returns_in_order(api_client):
     client, _ = api_client
-    client.post("/api/categories", json=_payload(id="b", order=2))
-    client.post("/api/categories", json=_payload(id="a", order=1))
+    client.post("/api/v1/categories", json=_payload(id="b", order=2))
+    client.post("/api/v1/categories", json=_payload(id="a", order=1))
 
-    response = client.get("/api/categories")
+    response = client.get("/api/v1/categories")
     assert response.status_code == 200
     body = response.json()
     assert [c["id"] for c in body] == ["a", "b"]
@@ -43,7 +43,7 @@ def test_create_then_list_returns_in_order(api_client):
 
 def test_create_returns_201_and_persists(api_client):
     client, db = api_client
-    response = client.post("/api/categories", json=_payload())
+    response = client.post("/api/v1/categories", json=_payload())
     assert response.status_code == 201
     assert response.json()["id"] == "tacos"
     assert db.categories.find_one({"id": "tacos"}) is not None
@@ -51,29 +51,29 @@ def test_create_returns_201_and_persists(api_client):
 
 def test_create_duplicate_returns_409(api_client):
     client, _ = api_client
-    client.post("/api/categories", json=_payload())
-    response = client.post("/api/categories", json=_payload())
+    client.post("/api/v1/categories", json=_payload())
+    response = client.post("/api/v1/categories", json=_payload())
     assert response.status_code == 409
 
 
 def test_get_category_404_when_missing(api_client):
     client, _ = api_client
-    assert client.get("/api/categories/missing").status_code == 404
+    assert client.get("/api/v1/categories/missing").status_code == 404
 
 
 def test_get_category_returns_existing(api_client):
     client, _ = api_client
-    client.post("/api/categories", json=_payload())
-    response = client.get("/api/categories/tacos")
+    client.post("/api/v1/categories", json=_payload())
+    response = client.get("/api/v1/categories/tacos")
     assert response.status_code == 200
     assert response.json()["name"] == "Tacos"
 
 
 def test_update_existing_category(api_client):
     client, _ = api_client
-    client.post("/api/categories", json=_payload())
+    client.post("/api/v1/categories", json=_payload())
     response = client.put(
-        "/api/categories/tacos",
+        "/api/v1/categories/tacos",
         json=_payload(id="tacos", name="Tacos al pastor"),
     )
     assert response.status_code == 200
@@ -82,21 +82,21 @@ def test_update_existing_category(api_client):
 
 def test_update_missing_returns_404(api_client):
     client, _ = api_client
-    response = client.put("/api/categories/none", json=_payload(id="none"))
+    response = client.put("/api/v1/categories/none", json=_payload(id="none"))
     assert response.status_code == 404
 
 
 def test_delete_existing_returns_204(api_client):
     client, db = api_client
-    client.post("/api/categories", json=_payload())
-    response = client.delete("/api/categories/tacos")
+    client.post("/api/v1/categories", json=_payload())
+    response = client.delete("/api/v1/categories/tacos")
     assert response.status_code == 204
     assert db.categories.find_one({"id": "tacos"}) is None
 
 
 def test_delete_missing_returns_404(api_client):
     client, _ = api_client
-    assert client.delete("/api/categories/none").status_code == 404
+    assert client.delete("/api/v1/categories/none").status_code == 404
 
 
 # ---- Service-level tests (HTTPException paths) ---------------------------

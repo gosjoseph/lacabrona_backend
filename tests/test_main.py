@@ -41,9 +41,9 @@ def test_app_metadata_title_and_version():
 
 def test_all_routers_mounted():
     paths = {getattr(route, "path", None) for route in app.routes}
-    assert "/api/categories" in paths
-    assert "/api/menu" in paths
-    assert "/api/inventory" in paths
-    assert "/api/orders" in paths
-    assert "/api/reservations" in paths
+    assert "/api/v1/categories" in paths
+    assert "/api/v1/menu" in paths
+    assert "/api/v1/inventory" in paths
+    assert "/api/v1/orders" in paths
+    assert "/api/v1/reservations" in paths
     assert "/api/v1/health/supertokens" in paths

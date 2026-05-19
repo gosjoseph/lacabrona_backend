@@ -5,7 +5,7 @@ from app.modules.menu.repository import MenuRepository
 from app.modules.menu.schema import MenuItemCreate, MenuItemUpdate
 from app.modules.menu.service import MenuService
 
-router = APIRouter(prefix="/api/menu", tags=["menu"])
+router = APIRouter(prefix="/api/v1/menu", tags=["menu"])
 
 
 def get_service() -> MenuService:

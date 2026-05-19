@@ -9,7 +9,7 @@ from app.modules.inventory.schema import (
 )
 from app.modules.inventory.service import InventoryService
 
-router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
 
 def get_service() -> InventoryService:

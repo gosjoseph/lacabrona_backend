@@ -5,7 +5,7 @@ from app.modules.categories.repository import CategoryRepository
 from app.modules.categories.schema import CategoryCreate, CategoryUpdate
 from app.modules.categories.service import CategoryService
 
-router = APIRouter(prefix="/api/categories", tags=["categories"])
+router = APIRouter(prefix="/api/v1/categories", tags=["categories"])
 
 
 def get_service() -> CategoryService:
