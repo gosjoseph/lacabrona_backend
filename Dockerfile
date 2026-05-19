@@ -3,9 +3,12 @@
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim AS base
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_NO_CACHE=1 \
+    UV_SYSTEM_PYTHON=1
 
 WORKDIR /app
 
@@ -16,8 +19,7 @@ RUN apt-get update \
 RUN useradd -ms /bin/bash appuser
 
 COPY requirements.txt ./
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 EXPOSE 8000
 
