@@ -77,6 +77,7 @@ def init_supertokens() -> None:
                     client_secret=settings.google_client_secret,
                 ),
             ],
+            authorization_endpoint_query_params={"prompt": "select_account"},
         ),
     )
 
