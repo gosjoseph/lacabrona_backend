@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # Cloudinary (PROD only — image uploads to the shared urbano cloud, lacabrona/ folder)
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+
+    # Local image store (DEV) — ephemeral, served at /media
+    media_dir: str = "/tmp/lacabrona-media"
+    media_base_url: str = ""
+
     # App
     environment: str = "dev"
 

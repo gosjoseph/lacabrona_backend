@@ -30,6 +30,7 @@ V1_PATHS = [
     "/api/v1/reservations/{reservation_id}",
     "/api/v1/auth/me",
     "/api/v1/health/supertokens",
+    "/api/v1/uploads/image",
     "/healthz",
 ]
 

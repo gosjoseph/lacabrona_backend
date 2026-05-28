@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.modules.auth.controller import router as auth_router
@@ -12,6 +13,7 @@ from app.modules.inventory.controller import router as inventory_router
 from app.modules.menu.controller import router as menu_router
 from app.modules.orders.controller import router as orders_router
 from app.modules.reservations.controller import router as reservations_router
+from app.modules.uploads.controller import router as uploads_router
 
 # Initialise SuperTokens before FastAPI is constructed. No-op when
 # ENVIRONMENT=test so the test suite doesn't need a real core.
@@ -47,6 +49,10 @@ app.include_router(orders_router)
 app.include_router(reservations_router)
 app.include_router(auth_router)
 app.include_router(health_router)
+app.include_router(uploads_router)
+
+os.makedirs(os.path.join(settings.media_dir, "menu"), exist_ok=True)
+app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 
 @app.get("/")
