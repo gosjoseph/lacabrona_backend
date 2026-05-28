@@ -17,7 +17,7 @@ REST API powering the customer website and the operations console.
 ## Env vars
 
 - `MONGO_URL` — Mongo connection string (default `mongodb://localhost:27017`)
-- `MONGO_DB` — database name (default `lacabrona`)
+- `MONGO_DB` — database name (default `lacabrona_db`)
 - `CORS_ORIGINS` — comma-separated list (default dev origins)
 
 ## Run locally

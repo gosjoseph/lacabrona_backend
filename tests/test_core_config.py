@@ -27,6 +27,6 @@ def test_cors_origins_alias_accepts_env_name():
 def test_default_supertokens_and_mongo_settings():
     s = Settings()
     assert s.mongo_url.startswith("mongodb://")
-    assert s.mongo_db == "lacabrona"
+    assert s.mongo_db == "lacabrona_db"
     assert s.supertokens_app_name == "La Cabrona"
     assert s.environment in {"dev", "test", "prod"}

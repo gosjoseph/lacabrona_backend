@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # MongoDB
     mongo_url: str = "mongodb://localhost:27017"
-    mongo_db: str = "lacabrona"
+    mongo_db: str = "lacabrona_db"
 
     # CORS (comma-separated list, env name kept as CORS_ORIGINS for backwards compat)
     cors_origins_raw: str = Field(
