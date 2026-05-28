@@ -1,11 +1,16 @@
+import logging
+
 from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
+from app.modules.customers.controller import get_customers_service
+from app.modules.customers.service import CustomerService
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schema import OrderCreate, OrderStatusUpdate
 from app.modules.orders.service import OrderService
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
+logger = logging.getLogger(__name__)
 
 
 def get_service() -> OrderService:
@@ -27,9 +32,22 @@ def get_order(order_id: str, service: OrderService = Depends(get_service)) -> di
 
 @router.post("", status_code=201)
 def create_order(
-    body: OrderCreate, service: OrderService = Depends(get_service)
+    body: OrderCreate,
+    service: OrderService = Depends(get_service),
+    customers: CustomerService = Depends(get_customers_service),
 ) -> dict:
-    return service.create_order(body)
+    result = service.create_order(body)
+    if body.phone:
+        try:
+            customers.upsert(name=body.customer, phone=body.phone)
+        except Exception as exc:  # noqa: BLE001 — hook must never break the caller
+            logger.exception(
+                "Customer upsert failed (name=%s phone=%s): %s",
+                body.customer,
+                body.phone,
+                exc,
+            )
+    return result
 
 
 @router.patch("/{order_id}/status")

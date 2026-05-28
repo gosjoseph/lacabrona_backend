@@ -7,7 +7,15 @@ from app.core.utils import utcnow
 
 
 class Customer(BaseModel):
-    """Customer profile authenticated via SuperTokens ThirdParty (Google)."""
+    """Shared customer document.
+
+    Two kinds of records coexist in the `customers` collection:
+      - SuperTokens-linked auth records (created via Google signin) — populate
+        `email`, `full_name`, `supertokens_user_id`, etc.
+      - Directory entries (created via the ops Clientes UI or auto-upsert from
+        reservations/orders) — populate `id` ("cust-NNNN"), `name`, `phone`,
+        `phone_normalized`, `notes`, `created`, `updated`.
+    """
 
     id: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -18,3 +26,10 @@ class Customer(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    phone_normalized: Optional[str] = None
+    notes: str = ""
+    created: Optional[datetime] = None
+    updated: Optional[datetime] = None

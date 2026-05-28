@@ -11,7 +11,10 @@ class OrderRepository:
         q: dict = {}
         if status:
             q["status"] = status
-        return [strip_mongo_id(d) for d in self.collection.find(q).sort("created", -1)]
+        return [
+            strip_mongo_id(d)
+            for d in self.collection.find(q).sort([("created", -1), ("id", -1)])
+        ]
 
     def find_by_id(self, order_id: str) -> dict | None:
         doc = self.collection.find_one({"id": order_id})

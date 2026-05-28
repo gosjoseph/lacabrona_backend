@@ -47,6 +47,9 @@ def api_client(mongo_test_db):
     from app.modules.categories import controller as categories_ctrl
     from app.modules.categories.repository import CategoryRepository
     from app.modules.categories.service import CategoryService
+    from app.modules.customers import controller as customers_ctrl
+    from app.modules.customers.repository import CustomerRepository
+    from app.modules.customers.service import CustomerService
     from app.modules.inventory import controller as inventory_ctrl
     from app.modules.inventory.repository import InventoryRepository
     from app.modules.inventory.service import InventoryService
@@ -71,6 +74,9 @@ def api_client(mongo_test_db):
         orders_ctrl.get_service: lambda: OrderService(OrderRepository(mongo_test_db)),
         reservations_ctrl.get_service: lambda: ReservationService(
             ReservationRepository(mongo_test_db)
+        ),
+        customers_ctrl.get_customers_service: lambda: CustomerService(
+            CustomerRepository(mongo_test_db)
         ),
     }
     app.dependency_overrides.update(overrides)
