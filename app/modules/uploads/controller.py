@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 
+from app.modules.auth.dependencies import require_employee
 from app.modules.uploads.service import ImageStore, get_image_store, validate_image
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
 
 
-@router.post("/image")
+@router.post("/image", dependencies=[Depends(require_employee)])
 async def upload_image(
     file: UploadFile = File(...),
     store: ImageStore = Depends(get_image_store),

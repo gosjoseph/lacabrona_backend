@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
+from app.modules.auth.dependencies import require_employee
 from app.modules.customers.controller import get_customers_service
 from app.modules.customers.service import CustomerService
 from app.modules.orders.repository import OrderRepository
@@ -30,7 +31,7 @@ def get_order(order_id: str, service: OrderService = Depends(get_service)) -> di
     return service.get_order(order_id)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_employee)])
 def create_order(
     body: OrderCreate,
     service: OrderService = Depends(get_service),
@@ -50,7 +51,7 @@ def create_order(
     return result
 
 
-@router.patch("/{order_id}/status")
+@router.patch("/{order_id}/status", dependencies=[Depends(require_employee)])
 def set_status(
     order_id: str,
     body: OrderStatusUpdate,
@@ -59,6 +60,6 @@ def set_status(
     return service.set_status(order_id, body)
 
 
-@router.delete("/{order_id}", status_code=204)
+@router.delete("/{order_id}", status_code=204, dependencies=[Depends(require_employee)])
 def delete_order(order_id: str, service: OrderService = Depends(get_service)) -> None:
     service.delete_order(order_id)

@@ -35,9 +35,11 @@ if os.getenv("ENVIRONMENT") != "test":
 
         return JSONResponse(status_code=500, content={"detail": "Authentication error"})
 
+# Credentialed CORS requires explicit origins — never "*" — so the ops console
+# can send the SuperTokens session cookie.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins or ["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

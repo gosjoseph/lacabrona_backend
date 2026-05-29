@@ -116,18 +116,27 @@ def test_selector_picks_local_in_dev(monkeypatch, tmp_path):
 
 @pytest.fixture
 def upload_client(tmp_path):
-    """A TestClient with get_image_store overridden to a LocalImageStore."""
+    """A TestClient with get_image_store overridden to a LocalImageStore.
+
+    Uploads are gated behind an employee session, so authenticate as one.
+    """
+    import mongomock
+
+    from tests.conftest import employee_auth_overrides
+
     store = LocalImageStore(str(tmp_path), "http://t")
+    auth_db = mongomock.MongoClient()["lacabrona_uploads_test"]
 
-    def _override():
-        return store
+    overrides = {get_image_store: lambda: store}
+    overrides.update(employee_auth_overrides(auth_db))
 
-    app.dependency_overrides[get_image_store] = _override
+    app.dependency_overrides.update(overrides)
     try:
         with TestClient(app) as client:
             yield client, tmp_path
     finally:
-        app.dependency_overrides.pop(get_image_store, None)
+        for key in overrides:
+            app.dependency_overrides.pop(key, None)
 
 
 def test_upload_image_png_returns_url(upload_client):

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
+from app.modules.auth.dependencies import require_employee
 from app.modules.customers.repository import CustomerRepository
 from app.modules.customers.schema import CustomerCreate, CustomerUpdate
 from app.modules.customers.service import CustomerService
@@ -27,7 +28,7 @@ def get_customer(
     return service.get_customer(customer_id)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_employee)])
 def create_customer(
     body: CustomerCreate,
     service: CustomerService = Depends(get_customers_service),
@@ -35,7 +36,7 @@ def create_customer(
     return service.create_customer(body)
 
 
-@router.put("/{customer_id}")
+@router.put("/{customer_id}", dependencies=[Depends(require_employee)])
 def update_customer(
     customer_id: str,
     body: CustomerUpdate,
@@ -44,13 +45,13 @@ def update_customer(
     return service.update_customer(customer_id, body)
 
 
-@router.delete("/{customer_id}", status_code=204)
+@router.delete("/{customer_id}", status_code=204, dependencies=[Depends(require_employee)])
 def delete_customer(
     customer_id: str, service: CustomerService = Depends(get_customers_service)
 ) -> None:
     service.delete_customer(customer_id)
 
 
-@router.post("/backfill")
+@router.post("/backfill", dependencies=[Depends(require_employee)])
 def backfill(service: CustomerService = Depends(get_customers_service)) -> dict:
     return service.backfill()

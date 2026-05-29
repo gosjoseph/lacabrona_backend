@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.core.database import get_db
+from app.modules.auth.dependencies import require_employee
 from app.modules.categories.repository import CategoryRepository
 from app.modules.categories.schema import CategoryCreate, CategoryUpdate
 from app.modules.categories.service import CategoryService
@@ -22,14 +23,14 @@ def get_category(category_id: str, service: CategoryService = Depends(get_servic
     return service.get_category(category_id)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_employee)])
 def create_category(
     body: CategoryCreate, service: CategoryService = Depends(get_service)
 ) -> dict:
     return service.create_category(body)
 
 
-@router.put("/{category_id}")
+@router.put("/{category_id}", dependencies=[Depends(require_employee)])
 def update_category(
     category_id: str,
     body: CategoryUpdate,
@@ -38,7 +39,7 @@ def update_category(
     return service.update_category(category_id, body)
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204, dependencies=[Depends(require_employee)])
 def delete_category(
     category_id: str, service: CategoryService = Depends(get_service)
 ) -> None:

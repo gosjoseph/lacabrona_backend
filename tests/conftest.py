@@ -13,6 +13,44 @@ os.environ.setdefault("ENVIRONMENT", "test")
 
 import mongomock
 import pytest
+from bson import ObjectId
+
+# SuperTokens id for the employee seeded by the auth-enabled test fixtures.
+# Mutating ops routes now require an employee session, so the shared clients
+# authenticate as this employee.
+EMPLOYEE_ST_ID = "st-employee-fixture"
+
+
+class _FakeSession:
+    """Minimal stand-in for a SuperTokens session container."""
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    def get_user_id(self) -> str:
+        return self._user_id
+
+
+def employee_auth_overrides(db) -> dict:
+    """Seed an employee in `db` and return dependency overrides that make a
+    request authenticate as that employee (session + auth-service binding)."""
+    from app.modules.auth import controller as auth_ctrl
+    from app.modules.auth import dependencies as auth_deps
+    from app.modules.auth.service import AuthService
+
+    if db.employees.find_one({"supertokens_user_id": EMPLOYEE_ST_ID}) is None:
+        db.employees.insert_one({
+            "_id": ObjectId(),
+            "email": "fixture-staff@lacabrona.uy",
+            "name": "Fixture Staff",
+            "role": "admin",
+            "supertokens_user_id": EMPLOYEE_ST_ID,
+        })
+
+    return {
+        auth_deps.get_auth_service: lambda: AuthService.from_db(db),
+        auth_ctrl._session_dep: lambda: _FakeSession(EMPLOYEE_ST_ID),
+    }
 
 
 @pytest.fixture
@@ -79,6 +117,9 @@ def api_client(mongo_test_db):
             CustomerRepository(mongo_test_db)
         ),
     }
+    # Authenticate every request as an employee so the gated mutating routes
+    # are reachable; the business-logic assertions are unchanged.
+    overrides.update(employee_auth_overrides(mongo_test_db))
     app.dependency_overrides.update(overrides)
     try:
         with TestClient(app) as client:

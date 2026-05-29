@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
+from app.modules.auth.dependencies import require_employee
 from app.modules.customers.controller import get_customers_service
 from app.modules.customers.service import CustomerService
 from app.modules.reservations.repository import ReservationRepository
@@ -52,7 +53,7 @@ def create_reservation(
     return result
 
 
-@router.put("/{reservation_id}")
+@router.put("/{reservation_id}", dependencies=[Depends(require_employee)])
 def update_reservation(
     reservation_id: str,
     body: ReservationUpdate,
@@ -67,7 +68,7 @@ def update_reservation(
     return result
 
 
-@router.delete("/{reservation_id}", status_code=204)
+@router.delete("/{reservation_id}", status_code=204, dependencies=[Depends(require_employee)])
 def delete_reservation(
     reservation_id: str, service: ReservationService = Depends(get_service)
 ) -> None:
