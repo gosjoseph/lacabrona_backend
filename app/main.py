@@ -11,6 +11,7 @@ from app.modules.categories.controller import router as categories_router
 from app.modules.customers.controller import router as customers_router
 from app.modules.health.controller import router as health_router
 from app.modules.inventory.controller import router as inventory_router
+from app.modules.kitchen.controller import router as kitchen_router
 from app.modules.menu.controller import router as menu_router
 from app.modules.orders.controller import router as orders_router
 from app.modules.reservations.controller import router as reservations_router
@@ -48,6 +49,7 @@ app.include_router(categories_router)
 app.include_router(menu_router)
 app.include_router(inventory_router)
 app.include_router(orders_router)
+app.include_router(kitchen_router)
 app.include_router(reservations_router)
 app.include_router(customers_router)
 app.include_router(auth_router)

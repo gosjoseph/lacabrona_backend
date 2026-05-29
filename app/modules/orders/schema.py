@@ -20,3 +20,7 @@ class OrderCreate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
+
+
+class OrderLineReadyUpdate(BaseModel):
+    ready: bool

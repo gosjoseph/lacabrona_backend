@@ -4,10 +4,16 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
 from app.modules.auth.dependencies import require_employee
+from app.modules.categories.repository import CategoryRepository
 from app.modules.customers.controller import get_customers_service
 from app.modules.customers.service import CustomerService
+from app.modules.menu.repository import MenuRepository
 from app.modules.orders.repository import OrderRepository
-from app.modules.orders.schema import OrderCreate, OrderStatusUpdate
+from app.modules.orders.schema import (
+    OrderCreate,
+    OrderLineReadyUpdate,
+    OrderStatusUpdate,
+)
 from app.modules.orders.service import OrderService
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -15,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_service() -> OrderService:
-    return OrderService(OrderRepository(get_db()))
+    db = get_db()
+    return OrderService(
+        OrderRepository(db),
+        menu_repository=MenuRepository(db),
+        category_repository=CategoryRepository(db),
+    )
 
 
 @router.get("")
@@ -58,6 +69,19 @@ def set_status(
     service: OrderService = Depends(get_service),
 ) -> dict:
     return service.set_status(order_id, body)
+
+
+@router.patch(
+    "/{order_id}/lines/{line_id}/ready",
+    dependencies=[Depends(require_employee)],
+)
+def set_line_ready(
+    order_id: str,
+    line_id: str,
+    body: OrderLineReadyUpdate,
+    service: OrderService = Depends(get_service),
+) -> dict:
+    return service.set_line_ready(order_id, line_id, body.ready)
 
 
 @router.delete("/{order_id}", status_code=204, dependencies=[Depends(require_employee)])

@@ -11,6 +11,8 @@ class OrderLine(BaseModel):
     id: str
     qty: int
     subtotal: float
+    station: Optional[str] = None
+    ready: bool = False
 
 
 class Order(BaseModel):

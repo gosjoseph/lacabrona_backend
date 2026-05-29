@@ -16,3 +16,4 @@ class MenuItem(BaseModel):
     glutenFree: bool = False
     image: Optional[str] = None
     available: bool = True
+    station: Optional[str] = None

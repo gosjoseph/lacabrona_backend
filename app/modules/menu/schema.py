@@ -20,3 +20,4 @@ class MenuItemUpdate(BaseModel):
     glutenFree: Optional[bool] = None
     image: Optional[str] = None
     available: Optional[bool] = None
+    station: Optional[str] = None

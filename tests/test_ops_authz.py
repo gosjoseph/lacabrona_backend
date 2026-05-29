@@ -270,3 +270,15 @@ def test_public_write_is_the_only_ungated_mutation(as_anonymous):
         if resp.status_code == 401:
             blocked.add((method, path))
     assert blocked == (all_mutating - PUBLIC_WRITE)
+
+
+# ---- T-K13: kitchen line-ready route is gated, not public ------------------
+
+def test_line_ready_route_is_gated(as_anonymous):
+    """The new PATCH line-ready route must be part of the gated set (401 anon)
+    and must NOT be added to PUBLIC_WRITE."""
+    route = ("PATCH", "/api/v1/orders/{order_id}/lines/{line_id}/ready")
+    assert route in _mutating_business_routes()
+    assert route not in PUBLIC_WRITE
+    resp = as_anonymous.request("PATCH", _fill(route[1]), json={})
+    assert resp.status_code == 401
