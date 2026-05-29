@@ -24,6 +24,9 @@ from app.modules.auth.service import AuthService
 from app.modules.categories import controller as categories_ctrl
 from app.modules.categories.repository import CategoryRepository
 from app.modules.categories.service import CategoryService
+from app.modules.content import controller as content_ctrl
+from app.modules.content.repository import ContentRepository
+from app.modules.content.service import ContentService
 from app.modules.customers import controller as customers_ctrl
 from app.modules.customers.repository import CustomerRepository
 from app.modules.customers.service import CustomerService
@@ -54,6 +57,7 @@ BUSINESS_PREFIXES = (
     "/api/v1/customers",
     "/api/v1/uploads",
     "/api/v1/settings",
+    "/api/v1/content",
 )
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC_WRITE = {("POST", "/api/v1/reservations")}
@@ -100,6 +104,7 @@ def _service_overrides(db) -> dict:
             CustomerRepository(db)
         ),
         settings_ctrl.get_service: lambda: SettingsService(SettingsRepository(db)),
+        content_ctrl.get_service: lambda: ContentService(ContentRepository(db)),
         auth_deps.get_auth_service: lambda: AuthService.from_db(db),
     }
 
@@ -286,4 +291,16 @@ def test_line_ready_route_is_gated(as_anonymous):
     assert route in _mutating_business_routes()
     assert route not in PUBLIC_WRITE
     resp = as_anonymous.request("PATCH", _fill(route[1]), json={})
+    assert resp.status_code == 401
+
+
+# ---- T-C7: content write route is gated, not public ------------------------
+
+def test_content_write_route_is_gated(as_anonymous):
+    """PUT /content must be part of the gated set (401 anon) and must NOT be
+    added to PUBLIC_WRITE — the CMS write is employee-only."""
+    route = ("PUT", "/api/v1/content")
+    assert route in _mutating_business_routes()
+    assert route not in PUBLIC_WRITE
+    resp = as_anonymous.request("PUT", _fill(route[1]), json={"items": {}})
     assert resp.status_code == 401
