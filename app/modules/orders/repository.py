@@ -40,6 +40,17 @@ class OrderRepository:
         )
         return res.matched_count > 0
 
+    def count_active_by_customer(
+        self, customer_id: str, statuses: list[str]
+    ) -> int:
+        """Count a customer's orders currently in one of `statuses`.
+
+        Backs the per-customer open-order cap; scoped to a single customer_id.
+        """
+        return self.collection.count_documents(
+            {"customer_id": customer_id, "status": {"$in": statuses}}
+        )
+
     def list_by_statuses(self, statuses: list[str]) -> list[dict]:
         return [
             strip_mongo_id(d)

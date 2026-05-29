@@ -36,3 +36,24 @@ def require_employee(
     if resolved is None or resolved["user_type"] != "employee":
         raise HTTPException(status_code=403, detail="forbidden")
     return resolved["doc"]
+
+
+def require_authenticated(
+    session=Depends(_session_dep),
+    service: AuthService = Depends(get_auth_service),
+) -> dict:
+    """Require a live SuperTokens session linked to ANY record.
+
+    Unlike `require_employee`, this never 403s a customer: it accepts both
+    customers and employees. The route/service decides what each actor may do.
+
+    - 401 when there is no session (raised by `_session_dep` itself) or when the
+      session cannot be resolved to any linked record.
+
+    Returns the resolved actor as `{"user_type": "customer"|"employee", "doc": …}`.
+    """
+    user_id = session.get_user_id()
+    resolved = service.resolve_session_user(user_id)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="unauthorised")
+    return resolved

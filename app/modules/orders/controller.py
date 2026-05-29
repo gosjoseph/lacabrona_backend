@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import require_employee
+from app.modules.auth.dependencies import require_authenticated, require_employee
 from app.modules.categories.repository import CategoryRepository
 from app.modules.customers.controller import get_customers_service
 from app.modules.customers.service import CustomerService
@@ -44,13 +44,14 @@ def get_order(order_id: str, service: OrderService = Depends(get_service)) -> di
     return service.get_order(order_id)
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_employee)])
+@router.post("", status_code=201)
 def create_order(
     body: OrderCreate,
+    actor: dict = Depends(require_authenticated),
     service: OrderService = Depends(get_service),
     customers: CustomerService = Depends(get_customers_service),
 ) -> dict:
-    result = service.create_order(body)
+    result = service.create_order(body, actor)
     if body.phone:
         try:
             customers.upsert(name=body.customer, phone=body.phone)

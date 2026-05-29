@@ -11,6 +11,33 @@ from app.modules.orders.status import derive_status
 from app.modules.settings.model import Settings
 from app.modules.settings.service import SettingsService
 
+# Per-customer cap on simultaneously-open orders. An order counts as "active"
+# until it is served or cancelled. Enforced only for customer-placed orders.
+MAX_ACTIVE_CUSTOMER_ORDERS = 3
+ACTIVE_ORDER_STATUSES = ["new", "preparing", "ready"]
+
+
+def _customer_identity(doc: dict) -> tuple[str, str]:
+    """Derive a stable ``(customer_id, display_name)`` from a customer doc.
+
+    The directory id (``cust-…``) is preferred for the id; otherwise the Mongo
+    ``_id``. The name prefers the directory ``name``, then the Google
+    first/last name, then ``full_name``, then the email local-part.
+    """
+    customer_id = doc.get("id") or str(doc.get("_id") or "")
+    name = (doc.get("name") or "").strip()
+    if not name:
+        name = " ".join(
+            part for part in (doc.get("first_name"), doc.get("last_name")) if part
+        ).strip()
+    if not name:
+        name = (doc.get("full_name") or "").strip()
+    if not name and doc.get("email"):
+        name = str(doc["email"]).split("@")[0]
+    if not name:
+        name = "Cliente"
+    return customer_id, name
+
 
 class OrderService:
     def __init__(
@@ -60,7 +87,24 @@ class OrderService:
             raise HTTPException(404, "Order not found")
         return doc
 
-    def create_order(self, body: OrderCreate) -> dict:
+    def create_order(self, body: OrderCreate, actor: dict | None = None) -> dict:
+        """Create an order.
+
+        When ``actor`` is a customer the order is hardened against pre-payment
+        abuse: empty orders are rejected, identity is stamped from the session
+        (ignoring any client-sent identity), the status is forced to "new", and
+        a per-customer open-order cap applies. For an employee actor (or no
+        actor — internal/legacy callers) behaviour is unchanged.
+
+        Order of checks for a customer:
+        empty(422) -> channel(409) -> cap(429) -> delivery/zone(422) -> insert.
+        """
+        is_customer = bool(actor) and actor.get("user_type") == "customer"
+
+        # 0. Empty order — a customer must order something.
+        if is_customer and not body.items:
+            raise HTTPException(422, "El pedido no puede estar vacío")
+
         settings = self._settings()
 
         # 1. Channel gating — a disabled channel is refused regardless of who
@@ -68,22 +112,38 @@ class OrderService:
         if not settings["channels"].get(body.channel, True):
             raise HTTPException(409, "Canal no disponible")
 
+        # 2. Customer identity + open-order cap. Identity always comes from the
+        #    session; any client-sent customer/customer_id is ignored.
+        customer_id = None
+        customer_name = body.customer
+        if is_customer:
+            customer_id, customer_name = _customer_identity(actor["doc"])
+            active = self.repository.count_active_by_customer(
+                customer_id, ACTIVE_ORDER_STATUSES
+            )
+            if active >= MAX_ACTIVE_CUSTOMER_ORDERS:
+                raise HTTPException(429, "Demasiados pedidos activos")
+
         subtotal = sum(line.subtotal for line in body.items)
 
-        # 2. Delivery fee — when a delivery order names a zone, the server is
+        # 3. Delivery fee — when a delivery order names a zone, the server is
         #    authoritative for its fee (any client-sent delivery is ignored).
         #    With no zone, the client delivery is kept (backward compatible).
+        #    A customer delivery order must also carry an address.
         delivery = body.delivery
         zone = None
-        if body.channel == "delivery" and body.zone is not None:
-            zones = {z["id"]: z for z in settings["delivery_zones"]}
-            match = zones.get(body.zone)
-            if match is None:
-                raise HTTPException(422, "Zona inválida")
-            delivery = match["fee"]
-            zone = body.zone
+        if body.channel == "delivery":
+            if is_customer and not body.address:
+                raise HTTPException(422, "El delivery requiere una dirección")
+            if body.zone is not None:
+                zones = {z["id"]: z for z in settings["delivery_zones"]}
+                match = zones.get(body.zone)
+                if match is None:
+                    raise HTTPException(422, "Zona inválida")
+                delivery = match["fee"]
+                zone = body.zone
 
-        # 3. Charges — service over subtotal, tax over (subtotal + service).
+        # 4. Charges — service over subtotal, tax over (subtotal + service).
         #    tax is excluded from the total when prices already include it.
         #    tip_default_rate is config only and never added to a total.
         charges = settings["charges"]
@@ -105,7 +165,8 @@ class OrderService:
             channel=body.channel,
             created=utcnow(),
             status="new",
-            customer=body.customer,
+            customer=customer_name,
+            customer_id=customer_id,
             address=body.address,
             phone=body.phone,
             table=body.table,

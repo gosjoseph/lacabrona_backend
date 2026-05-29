@@ -61,6 +61,10 @@ BUSINESS_PREFIXES = (
 )
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC_WRITE = {("POST", "/api/v1/reservations")}
+# Authenticated-but-not-employee writes: a logged-in customer may place an
+# order. This is NOT public (anonymous callers still get 401, see T-A6) — it is
+# simply not employee-gated.
+CUSTOMER_ALLOWED_WRITE = {("POST", "/api/v1/orders")}
 
 EMPLOYEE_ST_ID = "st-employee-authz"
 CUSTOMER_ST_ID = "st-customer-authz"
@@ -194,12 +198,45 @@ def test_anonymous_blocked_on_all_gated_mutations(as_anonymous):
         assert resp.status_code == 401, f"{method} {path} -> {resp.status_code}"
 
 
-# ---- T-A2: customer → 403 --------------------------------------------------
+# ---- T-A2: customer → 403 (except the customer-allowed order POST) ---------
 
 def test_customer_forbidden_on_all_gated_mutations(as_customer):
-    gated = _mutating_business_routes() - PUBLIC_WRITE
+    """A customer is 403 on every mutating business route EXCEPT the public
+    booking and the customer-allowed order POST."""
+    gated = _mutating_business_routes() - PUBLIC_WRITE - CUSTOMER_ALLOWED_WRITE
     for method, path in sorted(gated):
         resp = as_customer.request(method, _fill(path), json={})
+        assert resp.status_code == 403, f"{method} {path} -> {resp.status_code}"
+
+
+# ---- T-A7: customer may reach POST /orders (never 401/403) ------------------
+
+def test_customer_can_reach_order_post(as_customer):
+    """The customer-allowed write is not employee-gated: a customer POST /orders
+    is never 401/403 — it gets 2xx (valid body) or a validation 4xx."""
+    resp = as_customer.request(
+        "POST",
+        "/api/v1/orders",
+        json={
+            "channel": "table",
+            "customer": "Ignorado",
+            "items": [{"id": "menu-1", "qty": 1, "subtotal": 100.0}],
+        },
+    )
+    assert resp.status_code not in (401, 403), resp.text
+    assert resp.status_code < 500, resp.text
+
+
+def test_customer_still_forbidden_on_other_order_routes(as_customer):
+    """Only POST /orders opens to customers; every other mutating order route
+    stays employee-only (403)."""
+    other_order_routes = [
+        ("PATCH", "/api/v1/orders/test-id/status"),
+        ("DELETE", "/api/v1/orders/test-id"),
+        ("PATCH", "/api/v1/orders/test-id/lines/line-1/ready"),
+    ]
+    for method, path in other_order_routes:
+        resp = as_customer.request(method, path, json={})
         assert resp.status_code == 403, f"{method} {path} -> {resp.status_code}"
 
 

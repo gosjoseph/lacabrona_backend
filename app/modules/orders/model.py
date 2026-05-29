@@ -21,6 +21,9 @@ class Order(BaseModel):
     created: datetime
     status: OrderStatus = "new"
     customer: str
+    # Stable identity of the customer who placed the order; stamped from the
+    # session for customer-placed orders, None for staff-entered orders.
+    customer_id: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
     table: Optional[int] = None
