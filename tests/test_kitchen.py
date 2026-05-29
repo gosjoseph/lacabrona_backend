@@ -160,17 +160,36 @@ def test_create_stamps_resolved_station_and_ready_ignoring_client(mongo_test_db)
     assert lines["m2"]["ready"] is False
 
 
-# ---- T-K5: kitchen returns only active tickets -----------------------------
+# ---- T-K5: kitchen returns only "preparing" tickets ------------------------
 
 
-def test_kitchen_returns_only_new_and_preparing(kitchen_client):
+def test_kitchen_returns_only_preparing(kitchen_client):
     client, db = kitchen_client
     for status in ("new", "preparing", "ready", "served", "cancelled"):
         db.orders.insert_one(_order_doc(f"ord-{status}", status, [_line("m1")]))
     resp = client.get("/api/v1/kitchen")
     assert resp.status_code == 200
     ids = {t["id"] for t in resp.json()["tickets"]}
-    assert ids == {"ord-new", "ord-preparing"}
+    assert ids == {"ord-preparing"}
+    # a "new" order is not accepted yet -> it stays on the Pedidos board, never cocina
+    assert "ord-new" not in ids
+    # ready/served/cancelled have already left the kitchen view
+    assert {"ord-ready", "ord-served", "ord-cancelled"}.isdisjoint(ids)
+
+
+# ---- T-K5b: regression — exactly the one "preparing" order surfaces --------
+
+
+def test_kitchen_returns_exactly_the_preparing_order(kitchen_client):
+    client, db = kitchen_client
+    for status in ("new", "preparing", "ready", "served", "cancelled"):
+        db.orders.insert_one(_order_doc(f"ord-{status}", status, [_line("m1")]))
+    resp = client.get("/api/v1/kitchen")
+    assert resp.status_code == 200
+    tickets = resp.json()["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["id"] == "ord-preparing"
+    assert tickets[0]["status"] == "preparing"
 
 
 # ---- T-K6: legacy line resolved on read without mutating stored doc --------

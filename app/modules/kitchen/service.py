@@ -1,8 +1,12 @@
 """Kitchen Display System read service.
 
-Surfaces only the active tickets (status ``new`` or ``preparing``) and
+Surfaces only the tickets currently being prepared (status ``preparing``) and
 guarantees every line carries a resolved ``station`` and a ``ready`` flag —
 back-filling legacy lines on read without mutating the stored documents.
+
+A ``new`` order has not been accepted yet, so it stays on the Pedidos board
+(awaiting "Aceptar") and never reaches the cocina screen; ``ready`` and the
+terminal statuses have already left the kitchen view.
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ from app.modules.kitchen.resolver import StationResolver
 from app.modules.menu.repository import MenuRepository
 from app.modules.orders.repository import OrderRepository
 
-ACTIVE_STATUSES = ["new", "preparing"]
+ACTIVE_STATUSES = ["preparing"]
 
 
 class KitchenService:
