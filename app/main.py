@@ -22,18 +22,17 @@ init_supertokens()
 
 app = FastAPI(title="La Cabrona API", version="1.0.0")
 
-# Mount the SuperTokens ASGI middleware in non-test environments.
+# Mount the SuperTokens ASGI middleware in non-test environments. The
+# middleware translates session errors into the correct 401/403 responses, so
+# we deliberately register NO app-level handler for SuperTokensError or its
+# session subclasses (UnauthorisedError, TryRefreshTokenError,
+# InvalidClaimsError, ClaimValidationError). A blanket SuperTokensError->500
+# handler here would shadow that translation and turn every unauthenticated
+# request into a 500 — see tests/test_session_error_translation.py.
 if os.getenv("ENVIRONMENT") != "test":
-    from supertokens_python.exceptions import SuperTokensError
     from supertokens_python.framework.fastapi import get_middleware
 
     app.add_middleware(get_middleware())
-
-    @app.exception_handler(SuperTokensError)
-    async def supertokens_error_handler(request, exc: SuperTokensError):  # noqa: ARG001
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(status_code=500, content={"detail": "Authentication error"})
 
 # Credentialed CORS requires explicit origins — never "*" — so the ops console
 # can send the SuperTokens session cookie.
