@@ -123,6 +123,7 @@ def env(mongo_test_db):
             menu_repository=MenuRepository(db),
             category_repository=CategoryRepository(db),
             settings_repository=SettingsRepository(db),
+            customer_repository=CustomerRepository(db),
         ),
         customers_ctrl.get_customers_service: lambda: CustomerService(
             CustomerRepository(db)
@@ -250,7 +251,7 @@ def test_cap_is_per_customer(env):
     assert resp_a.status_code == 429
 
 
-# ---- T-CO7: employee path is uncapped and may name the customer ------------
+# ---- T-CO7: employee path is uncapped and links a canonical customer -------
 
 def test_employee_is_not_capped_and_sets_customer(env):
     env["set_actor"](EMPLOYEE_ST_ID)
@@ -260,7 +261,10 @@ def test_employee_is_not_capped_and_sets_customer(env):
         assert resp.status_code == 201, resp.text
         last = resp.json()
     assert last["customer"] == "Mesa VIP"
-    assert last["customer_id"] is None
+    # Part 1: every new order links to a canonical customer. A typed, unknown
+    # name on a staff order creates a name-only canonical row and stamps its id.
+    assert last["customer_id"] is not None
+    assert last["customer_id"].startswith("cust-")
 
 
 # ---- T-CO8: channel gating for a customer ----------------------------------
@@ -299,3 +303,63 @@ def test_customer_delivery_zone_fee_and_unknown_zone(env):
         json=_payload(channel="delivery", address="Calle 9", zone="inexistente"),
     )
     assert bad.status_code == 422
+
+
+# ---- T-CU5: manual order with a picked customer_id links it, creates none --
+
+def test_cu5_manual_order_with_picked_customer_id(env):
+    db = env["db"]
+    db.customers.insert_one({
+        "id": "cust-5005",
+        "name": "Pre Existente",
+        "created": datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+    })
+    before = db.customers.count_documents({})
+    env["set_actor"](EMPLOYEE_ST_ID)
+
+    resp = env["client"].post(
+        "/api/v1/orders",
+        json=_payload(customer="Pre Existente", customer_id="cust-5005"),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["customer_id"] == "cust-5005"
+    # A picked id is used as-is: no new customer is created.
+    assert db.customers.count_documents({}) == before
+
+
+# ---- T-CU6: manual order with a typed unknown name creates a name-only row --
+
+def test_cu6_manual_order_with_typed_name_creates_name_only_customer(env):
+    db = env["db"]
+    before = db.customers.count_documents({})
+    env["set_actor"](EMPLOYEE_ST_ID)
+
+    resp = env["client"].post(
+        "/api/v1/orders", json=_payload(customer="Cliente Nuevo CU6")
+    )
+    assert resp.status_code == 201, resp.text
+    cid = resp.json()["customer_id"]
+    assert cid is not None and cid.startswith("cust-")
+    assert db.customers.count_documents({}) == before + 1
+
+    created = db.customers.find_one({"id": cid})
+    assert created["name"] == "Cliente Nuevo CU6"
+    assert created.get("phone") in (None, "")  # name-only row
+
+
+# ---- T-CU7: an authenticated customer order links the caller's canonical id -
+
+def test_cu7_authenticated_customer_order_links_canonical_id(env):
+    db = env["db"]
+    db.customers.insert_one({
+        "_id": ObjectId(),
+        "id": "cust-7007",
+        "name": "Caro Canon",
+        "email": "caro@ex.com",
+        "supertokens_user_id": "st-caro-7",
+    })
+    env["set_actor"]("st-caro-7")
+
+    resp = env["client"].post("/api/v1/orders", json=_payload())
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["customer_id"] == "cust-7007"

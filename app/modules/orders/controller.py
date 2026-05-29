@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.modules.auth.dependencies import require_authenticated, require_employee
 from app.modules.categories.repository import CategoryRepository
 from app.modules.customers.controller import get_customers_service
+from app.modules.customers.repository import CustomerRepository
 from app.modules.customers.service import CustomerService
 from app.modules.menu.repository import MenuRepository
 from app.modules.orders.repository import OrderRepository
@@ -28,6 +29,7 @@ def get_service() -> OrderService:
         menu_repository=MenuRepository(db),
         category_repository=CategoryRepository(db),
         settings_repository=SettingsRepository(db),
+        customer_repository=CustomerRepository(db),
     )
 
 

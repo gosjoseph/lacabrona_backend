@@ -19,6 +19,7 @@ class Customer(BaseModel):
 
     id: Optional[str] = None
     email: Optional[EmailStr] = None
+    email_normalized: Optional[str] = None
     full_name: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None

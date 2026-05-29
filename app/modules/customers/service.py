@@ -1,24 +1,45 @@
-import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException
 
-from app.core.utils import strip_mongo_id, utcnow
+from app.core.utils import (
+    normalize_email,
+    normalize_phone,
+    strip_mongo_id,
+    utcnow,
+)
 from app.modules.customers.repository import CustomerRepository
 from app.modules.customers.schema import CustomerCreate, CustomerUpdate
 
-_PHONE_STRIP_RE = re.compile(r"[\s\-\(\)\.]")
+# Re-exported for backwards compatibility: callers/tests import `normalize_phone`
+# from this module. The canonical implementation now lives in `app.core.utils`
+# so the repository can share it without a circular import.
+__all__ = ["CustomerService", "normalize_email", "normalize_phone"]
 
 
-def normalize_phone(s) -> str:
-    """Strip ASCII whitespace, dashes, parens, dots; preserve any leading '+'.
+def _display_name(name: Optional[str], profile: dict | None, email: Optional[str]) -> str:
+    """Pick the best display `name` for a canonical customer row.
 
-    Returns "" for None or empty input.
+    Precedence: an explicit name, then the profile's full name, then
+    "first last", then the email local-part, then "".
     """
-    if not s:
-        return ""
-    return _PHONE_STRIP_RE.sub("", str(s))
+    if name and str(name).strip():
+        return str(name).strip()
+    profile = profile or {}
+    full = (profile.get("full_name") or "").strip()
+    if full:
+        return full
+    parts = " ".join(
+        str(p).strip()
+        for p in (profile.get("first_name"), profile.get("last_name"))
+        if p
+    ).strip()
+    if parts:
+        return parts
+    if email:
+        return str(email).split("@", 1)[0]
+    return ""
 
 
 class CustomerService:
@@ -37,19 +58,44 @@ class CustomerService:
         return doc
 
     def create_customer(self, body: CustomerCreate) -> dict:
-        phone_normalized = normalize_phone(body.phone)
-        if phone_normalized and self.repository.find_by_phone_normalized(
-            phone_normalized
-        ):
-            raise HTTPException(409, "Customer with that phone already exists")
         now = utcnow()
         doc = {
             "id": self._next_customer_id(),
             "name": body.name,
-            "phone": body.phone,
-            "phone_normalized": phone_normalized,
             "email": body.email,
+            "email_normalized": normalize_email(body.email),
             "notes": body.notes or "",
+            "is_active": True,
+            "created": now,
+            "updated": now,
+        }
+        # Only carry phone fields when a phone is actually supplied — a missing
+        # `phone_normalized` keeps the row out of the sparse-unique index so
+        # multiple name-only customers can coexist.
+        phone_normalized = normalize_phone(body.phone)
+        if phone_normalized:
+            if self.repository.find_by_phone_normalized(phone_normalized):
+                raise HTTPException(409, "Customer with that phone already exists")
+            doc["phone"] = body.phone
+            doc["phone_normalized"] = phone_normalized
+        elif body.phone:
+            doc["phone"] = body.phone
+        self.repository.insert(doc)
+        return strip_mongo_id(doc)
+
+    def create_name_only(self, name: str) -> dict:
+        """Create a canonical customer with only a display name set.
+
+        Used when a manual order names an unknown customer: everything except
+        `name` (and timestamps/flags) is left empty, and no phone fields are
+        written so the sparse phone index is never touched.
+        """
+        now = utcnow()
+        doc = {
+            "id": self._next_customer_id(),
+            "name": (name or "").strip(),
+            "notes": "",
+            "is_active": True,
             "created": now,
             "updated": now,
         }
@@ -75,6 +121,9 @@ class CustomerService:
                     )
             updates["phone_normalized"] = new_norm
 
+        if "email" in updates:
+            updates["email_normalized"] = normalize_email(updates["email"])
+
         updates["updated"] = utcnow()
         self.repository.update(customer_id, updates)
         return self.get_customer(customer_id)
@@ -99,6 +148,7 @@ class CustomerService:
                 patch["name"] = name
             if email and not existing.get("email"):
                 patch["email"] = email
+                patch["email_normalized"] = normalize_email(email)
             self.repository.update(existing["id"], patch)
             return self.repository.find_by_id(existing["id"])
         doc = {
@@ -107,7 +157,9 @@ class CustomerService:
             "phone": phone,
             "phone_normalized": phone_norm,
             "email": email,
+            "email_normalized": normalize_email(email),
             "notes": "",
+            "is_active": True,
             "created": now,
             "updated": now,
         }
@@ -143,7 +195,63 @@ class CustomerService:
         for o in db.orders.find({}):
             _process(o.get("customer", ""), o.get("phone", ""))
 
-        return {"scanned": scanned, "created": created, "updated": updated}
+        canonicalized = self._canonicalize_rows()
+
+        return {
+            "scanned": scanned,
+            "created": created,
+            "updated": updated,
+            "canonicalized": canonicalized,
+        }
+
+    def _canonicalize_rows(self) -> int:
+        """Bring every customer row onto the canonical shape. Idempotent.
+
+        Legacy auth rows (a `supertokens_user_id`/`full_name` but no `id`) get
+        a `cust-NNNN` id, a `name` derived from their Google profile, an
+        `email_normalized`, and `created`/`updated` copied from the auth
+        timestamps. Re-running changes nothing.
+        """
+        coll = self.repository.collection
+        count = 0
+        # Seed the id sequence from the current max so ids assigned in this loop
+        # never collide regardless of `created` ordering.
+        seq = self._max_customer_seq()
+        for doc in list(coll.find({})):
+            patch: dict = {}
+            if not doc.get("id"):
+                seq += 1
+                patch["id"] = f"cust-{seq}"
+            if not doc.get("name"):
+                derived = _display_name(None, doc, doc.get("email"))
+                # Only set a name when the legacy row actually carried one; an
+                # email local-part fallback would mint a name from nothing.
+                if doc.get("full_name") or doc.get("first_name") or doc.get("last_name"):
+                    patch["name"] = derived
+            if doc.get("email") and not doc.get("email_normalized"):
+                patch["email_normalized"] = normalize_email(doc["email"])
+            if not doc.get("created"):
+                patch["created"] = doc.get("created_at") or utcnow()
+            if not doc.get("updated"):
+                patch["updated"] = (
+                    doc.get("updated_at") or doc.get("created_at") or utcnow()
+                )
+            if patch:
+                coll.update_one({"_id": doc["_id"]}, {"$set": patch})
+                count += 1
+        return count
+
+    def _max_customer_seq(self) -> int:
+        """Highest numeric suffix among `cust-NNNN` ids (1000 when none)."""
+        max_n = 1000
+        for doc in self.repository.collection.find({"id": {"$regex": "^cust-"}}):
+            try:
+                n = int(str(doc["id"]).split("-")[-1])
+                if n > max_n:
+                    max_n = n
+            except Exception:
+                continue
+        return max_n
 
     def _next_customer_id(self) -> str:
         last = self.repository.find_latest()
@@ -155,7 +263,7 @@ class CustomerService:
         except Exception:
             return f"cust-{int(datetime.now(timezone.utc).timestamp())}"
 
-    # ----- legacy auth helpers (SuperTokens linkage) -------------------
+    # ----- auth linkage (SuperTokens) ----------------------------------
 
     def find_by_email(self, email: str) -> dict | None:
         return self.repository.find_by_email(email)
@@ -169,18 +277,66 @@ class CustomerService:
         if not customer_doc.get("supertokens_user_id"):
             self.repository.stamp_supertokens_id(customer_doc["_id"], supertokens_user_id)
 
+    def get_or_create_for_auth(
+        self,
+        supertokens_user_id: str,
+        email: Optional[str] = None,
+        name: Optional[str] = None,
+        profile: dict | None = None,
+    ) -> dict:
+        """Resolve the canonical customer for a SuperTokens sign-in.
+
+        - Find by `supertokens_user_id` first, so repeat logins never duplicate.
+        - Otherwise find an existing email match and link it (stamp the id,
+          leaving its name untouched).
+        - Otherwise create a fresh canonical customer row.
+
+        Always returns the matched/created Mongo document (with `_id`).
+        """
+        existing = self.repository.find_by_supertokens_id(supertokens_user_id)
+        if existing is not None:
+            return existing
+
+        if email:
+            norm = normalize_email(email)
+            by_email = self.repository.find_by_email_normalized(
+                norm
+            ) or self.repository.find_by_email(email)
+            if by_email is not None:
+                if not by_email.get("supertokens_user_id"):
+                    self.repository.stamp_supertokens_id(
+                        by_email["_id"], supertokens_user_id
+                    )
+                return (
+                    self.repository.find_by_supertokens_id(supertokens_user_id)
+                    or by_email
+                )
+
+        merged_profile = dict(profile or {})
+        if name and not merged_profile.get("full_name"):
+            merged_profile["full_name"] = name
+        self.create_from_profile(email or "", supertokens_user_id, merged_profile)
+        return self.repository.find_by_supertokens_id(supertokens_user_id)
+
     def create_from_profile(
         self, email: str, supertokens_user_id: str, profile: dict
     ) -> str:
         now = utcnow()
-        new_doc = {
-            "email": email,
+        profile = profile or {}
+        doc = {
+            "id": self._next_customer_id(),
+            "name": _display_name(None, profile, email),
+            "email": email or None,
+            "email_normalized": normalize_email(email),
             "full_name": profile.get("full_name", ""),
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
             "supertokens_user_id": supertokens_user_id,
             "is_active": True,
+            "notes": "",
+            "created": now,
+            "updated": now,
             "created_at": now,
             "updated_at": now,
         }
-        return self.repository.insert(new_doc)
+        return self.repository.insert(doc)

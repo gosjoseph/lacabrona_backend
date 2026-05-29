@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
-from app.core.utils import strip_mongo_id, utcnow
+from app.core.utils import normalize_phone, strip_mongo_id, utcnow
+from app.modules.customers.service import CustomerService
 from app.modules.kitchen.resolver import StationResolver
 from app.modules.orders.model import Order
 from app.modules.orders.repository import OrderRepository
@@ -46,11 +47,13 @@ class OrderService:
         menu_repository=None,
         category_repository=None,
         settings_repository=None,
+        customer_repository=None,
     ):
         self.repository = repository
         self.menu_repository = menu_repository
         self.category_repository = category_repository
         self.settings_repository = settings_repository
+        self.customer_repository = customer_repository
 
     def _settings(self) -> dict:
         """Resolve the operational settings.
@@ -112,9 +115,10 @@ class OrderService:
         if not settings["channels"].get(body.channel, True):
             raise HTTPException(409, "Canal no disponible")
 
-        # 2. Customer identity + open-order cap. Identity always comes from the
-        #    session; any client-sent customer/customer_id is ignored.
-        customer_id = None
+        # 2. Customer linkage + open-order cap. For a customer the identity
+        #    always comes from the session (any client-sent customer/customer_id
+        #    is ignored). For a staff order it is resolved from the picked
+        #    customer_id, or a canonical customer is created from the typed name.
         customer_name = body.customer
         if is_customer:
             customer_id, customer_name = _customer_identity(actor["doc"])
@@ -123,6 +127,8 @@ class OrderService:
             )
             if active >= MAX_ACTIVE_CUSTOMER_ORDERS:
                 raise HTTPException(429, "Demasiados pedidos activos")
+        else:
+            customer_id = self._resolve_staff_customer_id(body)
 
         subtotal = sum(line.subtotal for line in body.items)
 
@@ -182,6 +188,28 @@ class OrderService:
         data = order.model_dump()
         self.repository.insert(data)
         return strip_mongo_id(data)
+
+    def _resolve_staff_customer_id(self, body: OrderCreate) -> str | None:
+        """Resolve the canonical customer id for a staff-entered order.
+
+        Picked id wins. Otherwise, when a customer service is wired, a phone
+        upserts/links a directory customer and a bare typed name creates a
+        name-only canonical customer. Returns None when nothing identifies a
+        customer (or no customer repository is injected).
+        """
+        if body.customer_id:
+            return body.customer_id
+        if self.customer_repository is None:
+            return None
+        customers = CustomerService(self.customer_repository)
+        if normalize_phone(body.phone):
+            linked = customers.upsert(name=body.customer, phone=body.phone)
+            if linked:
+                return linked.get("id")
+        name = (body.customer or "").strip()
+        if name:
+            return customers.create_name_only(name)["id"]
+        return None
 
     def set_status(self, order_id: str, body: OrderStatusUpdate) -> dict:
         if not self.repository.update_status(order_id, body.status):

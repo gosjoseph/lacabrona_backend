@@ -57,36 +57,38 @@ class AuthService:
     ) -> dict:
         """Link the Google signin to an existing record or create a new customer.
 
-        - Existing customer: stamp `supertokens_user_id` (name fields untouched).
-        - Existing employee: stamp `supertokens_user_id` (employee linking path).
-        - Neither: create a new customer document using `profile`.
+        La Cabrona resolves CUSTOMER-FIRST by email: an existing or already
+        linked customer always wins over an employee. Only when there is no
+        customer at all does an employee email match.
+
+        - Existing/linked customer: linked via `get_or_create_for_auth` (finds
+          by SuperTokens id, else by email; name fields untouched).
+        - Otherwise an employee email: stamp `supertokens_user_id`.
+        - Otherwise: create a fresh canonical customer from `profile`.
 
         Raises `UnknownUserError` only when `email` is empty.
         """
         if not email:
             raise UnknownUserError("Google signin did not return an email")
 
-        customer = self.customer_service.find_by_email(email)
-        if customer:
-            self.customer_service.ensure_linked_to_supertokens(
-                customer, supertokens_user_id
+        # Customer-first: an existing customer (linked or email-matched) wins.
+        has_customer = (
+            self.customer_service.find_by_supertokens_id(supertokens_user_id)
+            is not None
+            or self.customer_service.find_by_email(email) is not None
+        )
+        if not has_customer:
+            employee = self.employee_service.link_to_supertokens(
+                email, supertokens_user_id
             )
-            return {
-                "user_type": "customer",
-                "internal_id": str(customer["_id"]),
-            }
+            if employee:
+                return {
+                    "user_type": "employee",
+                    "internal_id": str(employee["_id"]),
+                    "role": employee.get("role", "admin"),
+                }
 
-        employee = self.employee_service.link_to_supertokens(
-            email, supertokens_user_id
+        customer = self.customer_service.get_or_create_for_auth(
+            supertokens_user_id, email, profile=profile
         )
-        if employee:
-            return {
-                "user_type": "employee",
-                "internal_id": str(employee["_id"]),
-                "role": employee.get("role", "admin"),
-            }
-
-        internal_id = self.customer_service.create_from_profile(
-            email, supertokens_user_id, profile or {}
-        )
-        return {"user_type": "customer", "internal_id": internal_id}
+        return {"user_type": "customer", "internal_id": str(customer["_id"])}

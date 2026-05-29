@@ -392,3 +392,148 @@ def test_reservation_create_succeeds_even_when_upsert_raises(api_client, monkeyp
     body = response.json()
     assert body["id"] == "rs-2401"
     assert body["name"] == "Ana"
+
+
+# ---------------------------------------------------------------------------
+# Canonical customers (Part 1): schema, backfill, auth get-or-create, search
+# ---------------------------------------------------------------------------
+
+from app.modules.customers.service import normalize_email  # noqa: E402
+
+
+# T-CU1 ---------------------------------------------------------------------
+
+def test_cu1_directory_create_has_canonical_fields(api_client):
+    client, _ = api_client
+    resp = client.post(
+        "/api/v1/customers",
+        json={"name": "Caro", "phone": "099 111 222", "email": "Caro@EX.com"},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["id"] == "cust-1001"
+    assert body["name"] == "Caro"
+    assert body["phone_normalized"] == "099111222"
+    assert body["email_normalized"] == "caro@ex.com"
+    assert body["is_active"] is True
+
+
+def test_cu1_directory_create_name_only_has_no_phone_index_field(api_client):
+    client, db = api_client
+    first = client.post("/api/v1/customers", json={"name": "Solo Nombre"})
+    second = client.post("/api/v1/customers", json={"name": "Otro Nombre"})
+    # Two name-only customers must coexist (no phone_normalized="" collision).
+    assert first.status_code == 201
+    assert second.status_code == 201
+    stored = db.customers.find_one({"id": first.json()["id"]})
+    assert "phone_normalized" not in stored
+    assert stored["name"] == "Solo Nombre"
+
+
+# T-CU2 ---------------------------------------------------------------------
+
+def test_cu2_backfill_canonicalizes_legacy_auth_row_and_is_idempotent(api_client):
+    client, db = api_client
+    created_at = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    db.customers.insert_one({
+        "email": "Lucia@Ex.com",
+        "full_name": "Lucía Pérez",
+        "first_name": "Lucía",
+        "last_name": "Pérez",
+        "supertokens_user_id": "st-lucia",
+        "is_active": True,
+        "created_at": created_at,
+        "updated_at": created_at,
+    })
+
+    first = client.post("/api/v1/customers/backfill")
+    assert first.status_code == 200
+    assert first.json()["canonicalized"] == 1
+
+    row = db.customers.find_one({"supertokens_user_id": "st-lucia"})
+    assert str(row["id"]).startswith("cust-")
+    assert row["name"] == "Lucía Pérez"
+    assert row["email_normalized"] == "lucia@ex.com"
+    # `created`/`updated` are copied from the legacy auth timestamps.
+    assert row["created"] == row["created_at"]
+    assert row["updated"] == row["updated_at"]
+    saved_id = row["id"]
+
+    # Running it again changes nothing.
+    second = client.post("/api/v1/customers/backfill")
+    assert second.status_code == 200
+    assert second.json()["canonicalized"] == 0
+    row2 = db.customers.find_one({"supertokens_user_id": "st-lucia"})
+    assert row2["id"] == saved_id
+    assert row2["name"] == "Lucía Pérez"
+    assert db.customers.count_documents({"supertokens_user_id": "st-lucia"}) == 1
+
+
+# T-CU3 ---------------------------------------------------------------------
+
+def test_cu3_get_or_create_for_auth_no_duplicate_on_repeat(mongo_test_db):
+    svc = _service(mongo_test_db)
+    first = svc.get_or_create_for_auth("st-x", "x@ex.com", "X Name")
+    assert first["supertokens_user_id"] == "st-x"
+    assert str(first["id"]).startswith("cust-")
+    assert first["name"] == "X Name"
+    count = mongo_test_db.customers.count_documents({})
+
+    second = svc.get_or_create_for_auth("st-x", "x@ex.com", "X Name")
+    assert second["_id"] == first["_id"]
+    assert mongo_test_db.customers.count_documents({}) == count
+
+
+# T-CU4 ---------------------------------------------------------------------
+
+def test_cu4_get_or_create_for_auth_links_existing_email_match(mongo_test_db):
+    oid = ObjectId()
+    mongo_test_db.customers.insert_one({
+        "_id": oid,
+        "id": "cust-1001",
+        "name": "Existing",
+        "email": "match@ex.com",
+        "email_normalized": normalize_email("match@ex.com"),
+    })
+    svc = _service(mongo_test_db)
+
+    # Different casing must still match via email_normalized.
+    result = svc.get_or_create_for_auth("st-match", "MATCH@ex.com", "Ignored Name")
+
+    assert result["_id"] == oid
+    assert result["supertokens_user_id"] == "st-match"
+    assert result["name"] == "Existing"  # link, never overwrite the name
+    assert mongo_test_db.customers.count_documents({}) == 1  # no new row
+
+
+# T-CU8 ---------------------------------------------------------------------
+
+def test_cu8_directory_and_search_include_backfilled_auth_row(api_client):
+    client, db = api_client
+    # A legacy auth row (no id, no phone) — invisible until canonicalized.
+    db.customers.insert_one({
+        "email": "auth.user@ex.com",
+        "full_name": "Auth User",
+        "supertokens_user_id": "st-auth-8",
+        "is_active": True,
+    })
+    # A directory customer with a phone backs the phone-search assertion.
+    client.post("/api/v1/customers", json={"name": "Tel Person", "phone": "099888777"})
+
+    client.post("/api/v1/customers/backfill")
+
+    listing = client.get("/api/v1/customers").json()["customers"]
+    names = {c["name"] for c in listing}
+    assert "Auth User" in names  # backfilled auth row now appears in the directory
+    assert "Tel Person" in names
+
+    by_name = client.get("/api/v1/customers", params={"q": "auth"}).json()["customers"]
+    assert [c["name"] for c in by_name] == ["Auth User"]
+
+    by_email = client.get(
+        "/api/v1/customers", params={"q": "auth.user@"}
+    ).json()["customers"]
+    assert [c["name"] for c in by_email] == ["Auth User"]
+
+    by_phone = client.get("/api/v1/customers", params={"q": "888"}).json()["customers"]
+    assert [c["name"] for c in by_phone] == ["Tel Person"]

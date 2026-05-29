@@ -3,7 +3,7 @@ import re
 from pymongo import ASCENDING
 from pymongo.database import Database
 
-from app.core.utils import strip_mongo_id, utcnow
+from app.core.utils import normalize_email, normalize_phone, strip_mongo_id, utcnow
 
 
 class CustomerRepository:
@@ -30,10 +30,17 @@ class CustomerRepository:
         query: dict = {"id": {"$regex": "^cust-"}}
         if q:
             escaped = re.escape(q)
-            query["$or"] = [
+            ors: list[dict] = [
                 {"name": {"$regex": escaped, "$options": "i"}},
-                {"phone_normalized": {"$regex": escaped}},
+                {"email": {"$regex": escaped, "$options": "i"}},
             ]
+            email_norm = normalize_email(q)
+            if email_norm:
+                ors.append({"email_normalized": {"$regex": re.escape(email_norm)}})
+            phone_norm = normalize_phone(q)
+            if phone_norm:
+                ors.append({"phone_normalized": {"$regex": re.escape(phone_norm)}})
+            query["$or"] = ors
         return [
             strip_mongo_id(d)
             for d in self.collection.find(query).sort("created", -1)
@@ -71,6 +78,11 @@ class CustomerRepository:
 
     def find_by_email(self, email: str) -> dict | None:
         return self.collection.find_one({"email": email})
+
+    def find_by_email_normalized(self, email_normalized: str) -> dict | None:
+        if not email_normalized:
+            return None
+        return self.collection.find_one({"email_normalized": email_normalized})
 
     def find_by_supertokens_id(self, supertokens_user_id: str) -> dict | None:
         return self.collection.find_one({"supertokens_user_id": supertokens_user_id})
