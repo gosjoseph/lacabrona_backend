@@ -15,6 +15,7 @@ class OrderCreate(BaseModel):
     table: Optional[int] = None
     items: List[OrderLine]
     delivery: float = 0
+    zone: Optional[str] = None
     etaMinutes: Optional[int] = None
 
 

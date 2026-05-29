@@ -8,13 +8,33 @@ from app.modules.orders.model import Order
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schema import OrderCreate, OrderStatusUpdate
 from app.modules.orders.status import derive_status
+from app.modules.settings.model import Settings
+from app.modules.settings.service import SettingsService
 
 
 class OrderService:
-    def __init__(self, repository: OrderRepository, menu_repository=None, category_repository=None):
+    def __init__(
+        self,
+        repository: OrderRepository,
+        menu_repository=None,
+        category_repository=None,
+        settings_repository=None,
+    ):
         self.repository = repository
         self.menu_repository = menu_repository
         self.category_repository = category_repository
+        self.settings_repository = settings_repository
+
+    def _settings(self) -> dict:
+        """Resolve the operational settings.
+
+        When no settings repository is injected (e.g. unit tests that only need
+        order CRUD) fall back to the model DEFAULTS so behaviour is inert: all
+        channels on, no zones, zero charge rates.
+        """
+        if self.settings_repository is None:
+            return Settings().model_dump()
+        return SettingsService(self.settings_repository).settings_doc()
 
     def _station_resolver(self) -> StationResolver:
         """Build a resolver from the wired repositories.
@@ -41,8 +61,36 @@ class OrderService:
         return doc
 
     def create_order(self, body: OrderCreate) -> dict:
+        settings = self._settings()
+
+        # 1. Channel gating — a disabled channel is refused regardless of who
+        #    creates the order.
+        if not settings["channels"].get(body.channel, True):
+            raise HTTPException(409, "Canal no disponible")
+
         subtotal = sum(line.subtotal for line in body.items)
-        total = subtotal + body.delivery
+
+        # 2. Delivery fee — when a delivery order names a zone, the server is
+        #    authoritative for its fee (any client-sent delivery is ignored).
+        #    With no zone, the client delivery is kept (backward compatible).
+        delivery = body.delivery
+        zone = None
+        if body.channel == "delivery" and body.zone is not None:
+            zones = {z["id"]: z for z in settings["delivery_zones"]}
+            match = zones.get(body.zone)
+            if match is None:
+                raise HTTPException(422, "Zona inválida")
+            delivery = match["fee"]
+            zone = body.zone
+
+        # 3. Charges — service over subtotal, tax over (subtotal + service).
+        #    tax is excluded from the total when prices already include it.
+        #    tip_default_rate is config only and never added to a total.
+        charges = settings["charges"]
+        service = round(subtotal * charges["service_rate"], 2)
+        tax = round((subtotal + service) * charges["tax_rate"], 2)
+        total = subtotal + delivery + service + (0 if charges["tax_included"] else tax)
+
         # The server is authoritative for kitchen routing: resolve and stamp the
         # station on every line (ignoring any client-sent value) and reset ready.
         resolver = self._station_resolver()
@@ -63,7 +111,10 @@ class OrderService:
             table=body.table,
             items=lines,
             subtotal=subtotal,
-            delivery=body.delivery,
+            delivery=delivery,
+            zone=zone,
+            service=service,
+            tax=tax,
             total=total,
             etaMinutes=body.etaMinutes,
         )

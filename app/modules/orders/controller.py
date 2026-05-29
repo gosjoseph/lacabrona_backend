@@ -15,6 +15,7 @@ from app.modules.orders.schema import (
     OrderStatusUpdate,
 )
 from app.modules.orders.service import OrderService
+from app.modules.settings.repository import SettingsRepository
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ def get_service() -> OrderService:
         OrderRepository(db),
         menu_repository=MenuRepository(db),
         category_repository=CategoryRepository(db),
+        settings_repository=SettingsRepository(db),
     )
 
 

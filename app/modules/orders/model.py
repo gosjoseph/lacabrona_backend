@@ -27,5 +27,8 @@ class Order(BaseModel):
     items: List[OrderLine]
     subtotal: float
     delivery: float = 0
+    zone: Optional[str] = None
+    service: float = 0
+    tax: float = 0
     total: float
     etaMinutes: Optional[int] = None

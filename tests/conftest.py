@@ -67,6 +67,7 @@ def mongo_test_db():
         "orders",
         "reservations",
         "meta",
+        "settings",
     ):
         db[name].drop()
     yield db

@@ -39,6 +39,9 @@ from app.modules.orders.service import OrderService
 from app.modules.reservations import controller as reservations_ctrl
 from app.modules.reservations.repository import ReservationRepository
 from app.modules.reservations.service import ReservationService
+from app.modules.settings import controller as settings_ctrl
+from app.modules.settings.repository import SettingsRepository
+from app.modules.settings.service import SettingsService
 
 # ---- Route-policy constants ------------------------------------------------
 
@@ -50,6 +53,7 @@ BUSINESS_PREFIXES = (
     "/api/v1/reservations",
     "/api/v1/customers",
     "/api/v1/uploads",
+    "/api/v1/settings",
 )
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC_WRITE = {("POST", "/api/v1/reservations")}
@@ -95,6 +99,7 @@ def _service_overrides(db) -> dict:
         customers_ctrl.get_customers_service: lambda: CustomerService(
             CustomerRepository(db)
         ),
+        settings_ctrl.get_service: lambda: SettingsService(SettingsRepository(db)),
         auth_deps.get_auth_service: lambda: AuthService.from_db(db),
     }
 
