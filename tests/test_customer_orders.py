@@ -347,6 +347,55 @@ def test_cu6_manual_order_with_typed_name_creates_name_only_customer(env):
     assert created.get("phone") in (None, "")  # name-only row
 
 
+# ---- T-ORD-LINK1: typed unknown name links the created name-only customer ---
+
+def test_ord_link1_manual_order_typed_name_stamps_created_customer_id(env):
+    db = env["db"]
+    before = db.customers.count_documents({})
+    env["set_actor"](EMPLOYEE_ST_ID)
+
+    resp = env["client"].post(
+        "/api/v1/orders", json=_payload(customer="Mesa 1")
+    )
+    assert resp.status_code == 201, resp.text
+    cid = resp.json()["customer_id"]
+    # The id returned by create_name_only reaches the order — it is NOT dropped.
+    assert cid is not None and cid.startswith("cust-")
+    assert db.customers.count_documents({}) == before + 1
+
+    # And the persisted order (not just the response) carries the same id.
+    stored_order = db.orders.find_one({"id": resp.json()["id"]})
+    assert stored_order["customer_id"] == cid
+
+    created = db.customers.find_one({"id": cid})
+    assert created is not None
+    assert created["name"] == "Mesa 1"  # name == the typed name
+
+
+# ---- T-ORD-LINK2: picked customer_id is used as-is; no new customer made -----
+
+def test_ord_link2_manual_order_picked_id_links_without_creating(env):
+    db = env["db"]
+    db.customers.insert_one({
+        "id": "cust-6006",
+        "name": "Cliente Elegido",
+        "created": datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+    })
+    before = db.customers.count_documents({})
+    env["set_actor"](EMPLOYEE_ST_ID)
+
+    resp = env["client"].post(
+        "/api/v1/orders",
+        json=_payload(customer="Cliente Elegido", customer_id="cust-6006"),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["customer_id"] == "cust-6006"
+    stored_order = db.orders.find_one({"id": resp.json()["id"]})
+    assert stored_order["customer_id"] == "cust-6006"
+    # A picked id is used as-is: no new customer row is created.
+    assert db.customers.count_documents({}) == before
+
+
 # ---- T-CU7: an authenticated customer order links the caller's canonical id -
 
 def test_cu7_authenticated_customer_order_links_canonical_id(env):

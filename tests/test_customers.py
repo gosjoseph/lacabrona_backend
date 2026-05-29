@@ -448,7 +448,11 @@ def test_cu2_backfill_canonicalizes_legacy_auth_row_and_is_idempotent(api_client
 
     first = client.post("/api/v1/customers/backfill")
     assert first.status_code == 200
-    assert first.json()["canonicalized"] == 1
+    first_body = first.json()
+    assert first_body["canonicalized"] == 1
+    # The legacy auth row is examined and rewritten — surfaced as scanned/updated.
+    assert first_body["scanned"] >= 1
+    assert first_body["updated"] == 1
 
     row = db.customers.find_one({"supertokens_user_id": "st-lucia"})
     assert str(row["id"]).startswith("cust-")
@@ -462,7 +466,9 @@ def test_cu2_backfill_canonicalizes_legacy_auth_row_and_is_idempotent(api_client
     # Running it again changes nothing.
     second = client.post("/api/v1/customers/backfill")
     assert second.status_code == 200
-    assert second.json()["canonicalized"] == 0
+    second_body = second.json()
+    assert second_body["canonicalized"] == 0
+    assert second_body["updated"] == 0
     row2 = db.customers.find_one({"supertokens_user_id": "st-lucia"})
     assert row2["id"] == saved_id
     assert row2["name"] == "Lucía Pérez"

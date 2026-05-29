@@ -195,51 +195,70 @@ class CustomerService:
         for o in db.orders.find({}):
             _process(o.get("customer", ""), o.get("phone", ""))
 
-        canonicalized = self._canonicalize_rows()
+        # Canonicalize every customer row. Legacy auth rows (no `cust-NNNN` id)
+        # get one plus a derived name/email_normalized/timestamps. Each row
+        # examined counts toward `scanned`; each one actually rewritten counts
+        # toward `updated`, so the response reflects the legacy rows that were
+        # missed by the phone-only passes above.
+        canon_scanned, canon_updated = self._canonicalize_rows()
+        scanned += canon_scanned
+        updated += canon_updated
 
         return {
             "scanned": scanned,
             "created": created,
             "updated": updated,
-            "canonicalized": canonicalized,
+            "canonicalized": canon_updated,
         }
 
-    def _canonicalize_rows(self) -> int:
-        """Bring every customer row onto the canonical shape. Idempotent.
+    def _canonicalize_rows(self) -> tuple[int, int]:
+        """Bring every legacy customer row onto the canonical shape. Idempotent.
 
-        Legacy auth rows (a `supertokens_user_id`/`full_name` but no `id`) get
-        a `cust-NNNN` id, a `name` derived from their Google profile, an
-        `email_normalized`, and `created`/`updated` copied from the auth
-        timestamps. Re-running changes nothing.
+        A row is "legacy / needs canonicalization" iff it lacks a canonical
+        `id`: canonical rows always carry a `cust-NNNN`, auth rows never do, so
+        the absence of `id` is the reliable signal (the auth shape has neither
+        `id` nor `name` nor `phone_normalized`, and names its timestamps
+        `created_at`/`updated_at`). Such a row gets a `cust-NNNN` id, a `name`
+        derived from its Google profile (full name, else "first last", else the
+        email local-part), an `email_normalized`, a `phone_normalized` when it
+        carries a phone, and `created`/`updated` copied from the auth
+        `created_at`/`updated_at` when those canonical fields are absent. The
+        originals (and `supertokens_user_id`) are preserved — the patch is
+        purely additive. A row that already has an `id` is skipped, so a second
+        run rewrites nothing.
+
+        Returns ``(scanned, updated)``: rows examined and rows actually
+        canonicalized.
         """
         coll = self.repository.collection
-        count = 0
+        scanned = 0
+        updated = 0
         # Seed the id sequence from the current max so ids assigned in this loop
         # never collide regardless of `created` ordering.
         seq = self._max_customer_seq()
         for doc in list(coll.find({})):
-            patch: dict = {}
-            if not doc.get("id"):
-                seq += 1
-                patch["id"] = f"cust-{seq}"
+            scanned += 1
+            if doc.get("id"):
+                continue  # already canonical — leave it untouched
+            seq += 1
+            patch: dict = {"id": f"cust-{seq}"}
             if not doc.get("name"):
-                derived = _display_name(None, doc, doc.get("email"))
-                # Only set a name when the legacy row actually carried one; an
-                # email local-part fallback would mint a name from nothing.
-                if doc.get("full_name") or doc.get("first_name") or doc.get("last_name"):
-                    patch["name"] = derived
+                patch["name"] = _display_name(None, doc, doc.get("email"))
             if doc.get("email") and not doc.get("email_normalized"):
                 patch["email_normalized"] = normalize_email(doc["email"])
+            if doc.get("phone") and not doc.get("phone_normalized"):
+                phone_norm = normalize_phone(doc["phone"])
+                if phone_norm:
+                    patch["phone_normalized"] = phone_norm
             if not doc.get("created"):
                 patch["created"] = doc.get("created_at") or utcnow()
             if not doc.get("updated"):
                 patch["updated"] = (
                     doc.get("updated_at") or doc.get("created_at") or utcnow()
                 )
-            if patch:
-                coll.update_one({"_id": doc["_id"]}, {"$set": patch})
-                count += 1
-        return count
+            coll.update_one({"_id": doc["_id"]}, {"$set": patch})
+            updated += 1
+        return scanned, updated
 
     def _max_customer_seq(self) -> int:
         """Highest numeric suffix among `cust-NNNN` ids (1000 when none)."""
