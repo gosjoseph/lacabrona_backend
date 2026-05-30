@@ -171,14 +171,24 @@ def test_create_customer_assigns_first_id_and_timestamps(api_client):
 
 # B02 -----------------------------------------------------------------------
 
-def test_create_customer_returns_409_on_phone_collision(api_client):
-    client, _ = api_client
+def test_create_customer_with_colliding_phone_merges(api_client):
+    # Part 2: a phone collision between two non-auth records is no longer a 409.
+    # It CONVERGES — the second create folds into the existing (older) record.
+    client, db = api_client
     client.post("/api/v1/customers", json={"name": "Ana", "phone": "099111222"})
     dup = client.post(
         "/api/v1/customers",
         json={"name": "Otra", "phone": "(099) 111-222"},
     )
-    assert dup.status_code == 409
+    assert dup.status_code == 201
+    # Survivor is the older record (cust-1001 / "Ana"); a set survivor field is
+    # kept, so its name is unchanged.
+    assert dup.json()["id"] == "cust-1001"
+    assert dup.json()["name"] == "Ana"
+    # Exactly one canonical customer remains, carrying the shared phone.
+    rows = [c for c in db.customers.find({"id": {"$regex": "^cust-"}})]
+    assert len(rows) == 1
+    assert rows[0]["phone_normalized"] == "099111222"
 
 
 # B03 -----------------------------------------------------------------------
@@ -243,7 +253,9 @@ def test_update_partial_fields_bumps_updated(api_client):
 
 # B06 -----------------------------------------------------------------------
 
-def test_update_phone_collision_returns_409_and_does_not_modify(api_client):
+def test_update_phone_to_colliding_value_merges(api_client):
+    # Part 2: editing a record's phone onto another non-auth record's number
+    # CONVERGES the two instead of returning a 409.
     client, db = api_client
     client.post("/api/v1/customers", json={"name": "Ana", "phone": "099111222"})
     client.post("/api/v1/customers", json={"name": "Bea", "phone": "099333444"})
@@ -252,10 +264,14 @@ def test_update_phone_collision_returns_409_and_does_not_modify(api_client):
         "/api/v1/customers/cust-1002",
         json={"name": "Bea Edit", "phone": "099-111-222"},
     )
-    assert response.status_code == 409
-    stored = db.customers.find_one({"id": "cust-1002"})
-    assert stored["name"] == "Bea"
-    assert stored["phone"] == "099333444"
+    assert response.status_code == 200
+    # Survivor is the older record (Ana / cust-1001); a set survivor field
+    # (its name) is kept, so the edited "Bea Edit" name is not adopted.
+    assert response.json()["id"] == "cust-1001"
+    assert response.json()["name"] == "Ana"
+    # The edited record was merged away; only the survivor remains.
+    assert db.customers.find_one({"id": "cust-1002"}) is None
+    assert db.customers.count_documents({"id": {"$regex": "^cust-"}}) == 1
 
 
 # B07 -----------------------------------------------------------------------

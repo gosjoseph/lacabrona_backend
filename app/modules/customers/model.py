@@ -34,3 +34,10 @@ class Customer(BaseModel):
     notes: str = ""
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
+
+    # Convergence (Part 2): when two auth-linked records legitimately share a
+    # phone number they are NOT merged — both are flagged `shared_phone` and
+    # cross-linked through `shared_phone_with` (a list of the other sharers'
+    # canonical ids). Absent/false on ordinary records.
+    shared_phone: bool = False
+    shared_phone_with: list[str] = Field(default_factory=list)
