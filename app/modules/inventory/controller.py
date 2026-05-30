@@ -4,8 +4,8 @@ from app.core.database import get_db
 from app.modules.auth.dependencies import require_employee
 from app.modules.inventory.repository import InventoryRepository
 from app.modules.inventory.schema import (
-    InventoryAdjust,
     InventoryItemCreate,
+    InventoryRestock,
     InventoryUpdate,
 )
 from app.modules.inventory.service import InventoryService
@@ -43,13 +43,13 @@ def update_item(
     return service.update_item(item_id, body)
 
 
-@router.post("/{item_id}/adjust", dependencies=[Depends(require_employee)])
-def adjust_stock(
+@router.post("/{item_id}/restock", dependencies=[Depends(require_employee)])
+def restock(
     item_id: str,
-    body: InventoryAdjust,
+    body: InventoryRestock,
     service: InventoryService = Depends(get_service),
 ) -> dict:
-    return service.adjust_stock(item_id, body)
+    return service.restock(item_id, body)
 
 
 @router.delete("/{item_id}", status_code=204, dependencies=[Depends(require_employee)])
