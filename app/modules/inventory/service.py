@@ -89,6 +89,26 @@ class InventoryService:
         )
         return self.get_item(item_id)
 
+    def consume_estimated(self, item_id: str, qty: float) -> None:
+        """Subtract `qty` from an item's estimated stock (clamped at 0).
+
+        Used when an order is marked ready: the recipe-expanded demand is drawn
+        down from the *estimated* count only. `stock_real` is never touched —
+        the real count only changes through a physical recount/restock. A
+        missing item is a no-op (consumption is decoupled from the catalog).
+        The estimated base is read through the same normalization `restock`
+        uses, so legacy single-`stock` documents are consumed correctly.
+        """
+        doc = self.repository.find_raw(item_id)
+        if not doc:
+            return
+        norm = self._normalize(doc)
+        new_est = max(0, norm["stock_estimated"] - qty)
+        self.repository.update(
+            item_id,
+            {"stock_estimated": new_est, "updated": utcnow()},
+        )
+
     def delete_item(self, item_id: str) -> None:
         if not self.repository.delete(item_id):
             raise HTTPException(404, "Inventory item not found")

@@ -10,6 +10,9 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.modules.inventory.repository import InventoryRepository
+from app.modules.inventory.service import InventoryService
+
 
 def _payload(**overrides) -> dict:
     base = {
@@ -260,3 +263,40 @@ def test_legacy_restock_uses_normalized_base(api_client):  # T-B12
     body = response.json()
     assert body["stock_real"] == 10
     assert body["stock_estimated"] == 10
+
+
+# ---- T-CI1 / T-CI2 / T-CI3: consume_estimated -----------------------------
+# Estimated-only drawdown used when an order is marked ready. `stock_real` is
+# never touched; the demand is clamped at 0; a missing item is a silent no-op.
+
+def _inventory_service(db) -> InventoryService:
+    return InventoryService(InventoryRepository(db))
+
+
+def test_consume_estimated_touches_only_estimated(api_client):  # T-CI1
+    client, db = api_client
+    client.post(
+        "/api/v1/inventory", json=_payload(stock_real=10.0, stock_estimated=8.0)
+    )
+    _inventory_service(db).consume_estimated("tomate", 3.0)
+    body = client.get("/api/v1/inventory/tomate").json()
+    assert body["stock_estimated"] == 5.0
+    assert body["stock_real"] == 10.0
+
+
+def test_consume_estimated_clamps_at_zero(api_client):  # T-CI2
+    client, db = api_client
+    client.post(
+        "/api/v1/inventory", json=_payload(stock_real=10.0, stock_estimated=4.0)
+    )
+    _inventory_service(db).consume_estimated("tomate", 100.0)
+    body = client.get("/api/v1/inventory/tomate").json()
+    assert body["stock_estimated"] == 0
+    assert body["stock_real"] == 10.0
+
+
+def test_consume_estimated_missing_item_is_noop(api_client):  # T-CI3
+    client, db = api_client
+    # No document for "ghost"; the call must not raise and must not create one.
+    _inventory_service(db).consume_estimated("ghost", 5.0)
+    assert client.get("/api/v1/inventory/ghost").status_code == 404

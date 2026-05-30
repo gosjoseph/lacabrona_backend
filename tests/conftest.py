@@ -111,7 +111,11 @@ def api_client(mongo_test_db):
         inventory_ctrl.get_service: lambda: InventoryService(
             InventoryRepository(mongo_test_db)
         ),
-        orders_ctrl.get_service: lambda: OrderService(OrderRepository(mongo_test_db)),
+        orders_ctrl.get_service: lambda: OrderService(
+            OrderRepository(mongo_test_db),
+            menu_repository=MenuRepository(mongo_test_db),
+            inventory_service=InventoryService(InventoryRepository(mongo_test_db)),
+        ),
         reservations_ctrl.get_service: lambda: ReservationService(
             ReservationRepository(mongo_test_db)
         ),

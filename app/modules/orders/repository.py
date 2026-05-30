@@ -32,6 +32,12 @@ class OrderRepository:
         res = self.collection.update_one({"id": order_id}, {"$set": {"status": status}})
         return res.matched_count > 0
 
+    def mark_inventory_applied(self, order_id: str) -> bool:
+        res = self.collection.update_one(
+            {"id": order_id}, {"$set": {"inventory_applied": True}}
+        )
+        return res.matched_count > 0
+
     def update_lines_and_status(
         self, order_id: str, items: list[dict], status: str
     ) -> bool:

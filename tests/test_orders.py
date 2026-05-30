@@ -136,3 +136,191 @@ def test_next_order_id_falls_back_when_existing_id_unparseable(mongo_test_db):
     assert next_id.startswith("ord-")
     # Fallback uses a unix timestamp; "ord-" + digits.
     assert next_id.split("-")[1].isdigit()
+
+
+# =========================================================================
+# T-CO1..T-CO9: estimated-inventory deduction when an order is marked ready
+# =========================================================================
+# When an order first reaches "ready" the service expands every line through
+# its menu item's recipe, aggregates per inventory item, and subtracts from
+# stock_estimated (clamped at 0). stock_real is NEVER touched, the deduction
+# is idempotent, and any gap (missing menu item, empty recipe, unknown
+# inventory id) is skipped — marking ready must always succeed.
+
+def _seed_inventory(client, item_id, *, real, estimated):
+    resp = client.post(
+        "/api/v1/inventory",
+        json={
+            "id": item_id,
+            "name": item_id,
+            "category": "insumos",
+            "unit": "kg",
+            "min": 0.0,
+            "stock_real": real,
+            "stock_estimated": estimated,
+            "providers": [],
+        },
+    )
+    assert resp.status_code == 201
+
+
+def _seed_menu(client, item_id, recipe):
+    resp = client.post(
+        "/api/v1/menu",
+        json={
+            "id": item_id,
+            "category": "comida",
+            "name": item_id,
+            "description": "—",
+            "price": 100.0,
+            "unit": "porción",
+            "recipe": recipe,
+        },
+    )
+    assert resp.status_code == 201
+
+
+def _order_with_lines(client, lines):
+    """Create an order from ``(menu_id, qty)`` pairs; returns its id."""
+    items = [{"id": lid, "qty": qty, "subtotal": 100.0 * qty} for lid, qty in lines]
+    resp = client.post("/api/v1/orders", json=_payload(items=items))
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
+def _set_status(client, order_id, status):
+    return client.patch(f"/api/v1/orders/{order_id}/status", json={"status": status})
+
+
+def _stock(client, item_id):
+    body = client.get(f"/api/v1/inventory/{item_id}").json()
+    return body["stock_real"], body["stock_estimated"]
+
+
+def test_ready_deducts_per_ingredient_totals(api_client):  # T-CO1
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=100, estimated=100)
+    _seed_inventory(client, "queso", real=50, estimated=50)
+    _seed_inventory(client, "lechuga", real=20, estimated=20)
+    _seed_menu(
+        client,
+        "pizza",
+        [{"inventory_id": "harina", "qty": 2}, {"inventory_id": "queso", "qty": 1}],
+    )
+    _seed_menu(client, "ensalada", [{"inventory_id": "lechuga", "qty": 1}])
+
+    order_id = _order_with_lines(client, [("pizza", 3), ("ensalada", 2)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+
+    assert _stock(client, "harina") == (100, 100 - 2 * 3)  # 94
+    assert _stock(client, "queso") == (50, 50 - 1 * 3)  # 47
+    assert _stock(client, "lechuga") == (20, 20 - 1 * 2)  # 18
+
+
+def test_ready_deduction_is_idempotent(api_client):  # T-CO2
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=100, estimated=100)
+    _seed_menu(client, "pan", [{"inventory_id": "harina", "qty": 1}])
+
+    order_id = _order_with_lines(client, [("pan", 4)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+    assert _stock(client, "harina") == (100, 96)
+
+    # Re-marking ready, and a served -> ready reopen, must not deduct again.
+    assert _set_status(client, order_id, "ready").status_code == 200
+    assert _set_status(client, order_id, "served").status_code == 200
+    assert _set_status(client, order_id, "ready").status_code == 200
+    assert _stock(client, "harina") == (100, 96)
+
+
+def test_ready_clamps_estimated_at_zero(api_client):  # T-CO3
+    client, _ = api_client
+    _seed_inventory(client, "sal", real=10, estimated=2)
+    _seed_menu(client, "salado", [{"inventory_id": "sal", "qty": 10}])
+
+    order_id = _order_with_lines(client, [("salado", 1)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+
+    assert _stock(client, "sal") == (10, 0)
+
+
+def test_ready_aggregates_shared_inventory_id(api_client):  # T-CO4
+    client, _ = api_client
+    _seed_inventory(client, "aceite", real=100, estimated=100)
+    _seed_menu(client, "papas", [{"inventory_id": "aceite", "qty": 3}])
+    _seed_menu(client, "milanesa", [{"inventory_id": "aceite", "qty": 2}])
+
+    order_id = _order_with_lines(client, [("papas", 2), ("milanesa", 4)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+
+    # 3*2 + 2*4 = 14, deducted exactly once from the shared item.
+    assert _stock(client, "aceite") == (100, 86)
+
+
+def test_ready_empty_recipe_contributes_nothing(api_client):  # T-CO5
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=10, estimated=10)
+    _seed_menu(client, "agua", [])
+
+    order_id = _order_with_lines(client, [("agua", 3)])
+    resp = _set_status(client, order_id, "ready")
+    assert resp.status_code == 200
+    assert resp.json()["inventory_applied"] is True
+    assert _stock(client, "harina") == (10, 10)
+
+
+def test_ready_skips_unknown_menu_item(api_client):  # T-CO6
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=10, estimated=10)
+    _seed_menu(client, "real-item", [{"inventory_id": "harina", "qty": 2}])
+
+    # "ghost-menu" has no menu document; it is skipped, the real line deducts.
+    order_id = _order_with_lines(client, [("real-item", 1), ("ghost-menu", 5)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+
+    assert _stock(client, "harina") == (10, 8)
+
+
+def test_ready_skips_unknown_inventory_id(api_client):  # T-CO7
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=10, estimated=10)
+    _seed_menu(
+        client,
+        "thing",
+        [{"inventory_id": "harina", "qty": 2}, {"inventory_id": "ghost-inv", "qty": 99}],
+    )
+
+    order_id = _order_with_lines(client, [("thing", 1)])
+    assert _set_status(client, order_id, "ready").status_code == 200
+
+    assert _stock(client, "harina") == (10, 8)
+    # The unknown ingredient never created an inventory document.
+    assert client.get("/api/v1/inventory/ghost-inv").status_code == 404
+
+
+def test_preparing_does_not_deduct(api_client):  # T-CO8
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=10, estimated=10)
+    _seed_menu(client, "pan", [{"inventory_id": "harina", "qty": 1}])
+
+    order_id = _order_with_lines(client, [("pan", 5)])
+    resp = _set_status(client, order_id, "preparing")
+    assert resp.status_code == 200
+    assert resp.json()["inventory_applied"] is False
+    assert _stock(client, "harina") == (10, 10)
+
+    # Reaching ready afterwards still deducts.
+    assert _set_status(client, order_id, "ready").status_code == 200
+    assert _stock(client, "harina") == (10, 5)
+
+
+def test_inventory_applied_flag_flips_on_ready(api_client):  # T-CO9
+    client, _ = api_client
+    _seed_inventory(client, "harina", real=10, estimated=10)
+    _seed_menu(client, "pan", [{"inventory_id": "harina", "qty": 1}])
+
+    order_id = _order_with_lines(client, [("pan", 1)])
+    assert client.get(f"/api/v1/orders/{order_id}").json()["inventory_applied"] is False
+
+    assert _set_status(client, order_id, "ready").status_code == 200
+    assert client.get(f"/api/v1/orders/{order_id}").json()["inventory_applied"] is True

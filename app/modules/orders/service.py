@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -16,6 +17,8 @@ from app.modules.settings.service import SettingsService
 # until it is served or cancelled. Enforced only for customer-placed orders.
 MAX_ACTIVE_CUSTOMER_ORDERS = 3
 ACTIVE_ORDER_STATUSES = ["new", "preparing", "ready"]
+
+logger = logging.getLogger(__name__)
 
 
 def _customer_identity(doc: dict) -> tuple[str, str]:
@@ -48,12 +51,14 @@ class OrderService:
         category_repository=None,
         settings_repository=None,
         customer_repository=None,
+        inventory_service=None,
     ):
         self.repository = repository
         self.menu_repository = menu_repository
         self.category_repository = category_repository
         self.settings_repository = settings_repository
         self.customer_repository = customer_repository
+        self.inventory_service = inventory_service
 
     def _settings(self) -> dict:
         """Resolve the operational settings.
@@ -212,9 +217,51 @@ class OrderService:
         return None
 
     def set_status(self, order_id: str, body: OrderStatusUpdate) -> dict:
+        order = self.repository.find_by_id(order_id)
+        if not order:
+            raise HTTPException(404, "Order not found")
+        # Deduct estimated stock the FIRST time the order reaches "ready".
+        # Decide before the write; the flag on the loaded doc is the guard.
+        fire = body.status == "ready" and not order.get("inventory_applied", False)
         if not self.repository.update_status(order_id, body.status):
             raise HTTPException(404, "Order not found")
+        if fire and self.menu_repository is not None and self.inventory_service is not None:
+            self._apply_estimated_consumption(order)
         return self.get_order(order_id)
+
+    def _apply_estimated_consumption(self, order: dict) -> None:
+        """Expand every line through its recipe and draw down estimated stock.
+
+        Best-effort and one-shot: a missing menu item, an empty recipe, or an
+        unknown inventory id is skipped, never raised — marking an order ready
+        must always succeed. Quantities for the same inventory id across lines
+        are aggregated so a shared ingredient is deducted exactly once. On
+        success the order is flagged so the deduction never runs again.
+        """
+        try:
+            totals: dict[str, float] = {}
+            for line in order.get("items", []):
+                menu_item = self.menu_repository.find_by_id(line.get("id"))
+                if not menu_item:
+                    continue
+                line_qty = line.get("qty", 0)
+                for ingredient in menu_item.get("recipe") or []:
+                    inventory_id = ingredient.get("inventory_id")
+                    if not inventory_id:
+                        continue
+                    totals[inventory_id] = (
+                        totals.get(inventory_id, 0.0)
+                        + ingredient.get("qty", 0) * line_qty
+                    )
+            for inventory_id, total_qty in totals.items():
+                self.inventory_service.consume_estimated(inventory_id, total_qty)
+            self.repository.mark_inventory_applied(order["id"])
+        except Exception as exc:  # noqa: BLE001 — must never break marking ready
+            logger.exception(
+                "Estimated-inventory deduction failed for order %s: %s",
+                order.get("id"),
+                exc,
+            )
 
     def set_line_ready(self, order_id: str, line_id: str, ready: bool) -> dict:
         doc = self.repository.find_by_id(order_id)

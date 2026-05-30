@@ -8,6 +8,8 @@ from app.modules.categories.repository import CategoryRepository
 from app.modules.customers.controller import get_customers_service
 from app.modules.customers.repository import CustomerRepository
 from app.modules.customers.service import CustomerService
+from app.modules.inventory.repository import InventoryRepository
+from app.modules.inventory.service import InventoryService
 from app.modules.menu.repository import MenuRepository
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schema import (
@@ -30,6 +32,7 @@ def get_service() -> OrderService:
         category_repository=CategoryRepository(db),
         settings_repository=SettingsRepository(db),
         customer_repository=CustomerRepository(db),
+        inventory_service=InventoryService(InventoryRepository(db)),
     )
 
 

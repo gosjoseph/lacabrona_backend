@@ -35,3 +35,6 @@ class Order(BaseModel):
     tax: float = 0
     total: float
     etaMinutes: Optional[int] = None
+    # Set True the first time the order is marked "ready"; guards the one-shot
+    # estimated-inventory deduction so it never runs twice for the same order.
+    inventory_applied: bool = False
