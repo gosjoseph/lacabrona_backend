@@ -446,6 +446,43 @@ def test_cu1_directory_create_name_only_has_no_phone_index_field(api_client):
     assert stored["name"] == "Solo Nombre"
 
 
+# T-NM1/2/3 (name-only create: empty phone allowed, non-empty validated) -----
+
+def test_nm1_create_name_only_no_phone_persists_no_phone_fields(api_client):
+    # A name with NO phone succeeds and stores id + name but no phone /
+    # phone_normalized field (not an empty string).
+    client, db = api_client
+    resp = client.post("/api/v1/customers", json={"name": "Mesa 1"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert str(body["id"]).startswith("cust-")
+    assert body["name"] == "Mesa 1"
+    stored = db.customers.find_one({"id": body["id"]})
+    assert "phone" not in stored
+    assert "phone_normalized" not in stored
+
+
+def test_nm2_create_with_valid_phone_sets_phone_normalized(api_client):
+    client, _ = api_client
+    resp = client.post(
+        "/api/v1/customers", json={"name": "Ana", "phone": "099 111 222"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["phone_normalized"] == "099111222"
+
+
+def test_nm3_create_with_nonempty_invalid_phone_is_rejected(api_client):
+    # A non-empty but malformed phone (too few digits) is still rejected — the
+    # validation is only relaxed for the empty case.
+    client, db = api_client
+    resp = client.post(
+        "/api/v1/customers", json={"name": "Mala", "phone": "123"}
+    )
+    assert resp.status_code == 422
+    # Nothing canonical was persisted for the rejected create.
+    assert db.customers.count_documents({"id": {"$regex": "^cust-"}}) == 0
+
+
 # T-CU2 ---------------------------------------------------------------------
 
 def test_cu2_backfill_canonicalizes_legacy_auth_row_and_is_idempotent(api_client):

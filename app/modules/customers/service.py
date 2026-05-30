@@ -95,6 +95,12 @@ class CustomerService:
 
     def create_customer(self, body: CustomerCreate) -> dict:
         now = utcnow()
+        # Validate the phone format up front, before any insert, so a malformed
+        # phone never leaves a partial row behind. The phone is optional — an
+        # empty/absent phone yields a name-only customer; a non-empty phone must
+        # carry enough digits or it is rejected as "Teléfono inválido."
+        if body.phone and sum(ch.isdigit() for ch in body.phone) < 6:
+            raise HTTPException(422, "Teléfono inválido.")
         # Insert a base row first WITHOUT the indexed identity fields, then let
         # `resolve_identity` commit the email/phone (or converge with a sharer).
         # Inserting the email separately means a colliding email never trips the
@@ -118,11 +124,11 @@ class CustomerService:
                 target["email_normalized"] = email_norm
                 has_identity = True
         if body.phone:
+            # Format already validated above; a non-empty phone here has enough
+            # digits, so normalize_phone always yields a usable index value.
             target["phone"] = body.phone
-            phone_norm = normalize_phone(body.phone)
-            if phone_norm:
-                target["phone_normalized"] = phone_norm
-                has_identity = True
+            target["phone_normalized"] = normalize_phone(body.phone)
+            has_identity = True
 
         if not has_identity:
             # A name-only (or non-normalizable email/phone) row: persist any raw
