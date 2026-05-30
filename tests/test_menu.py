@@ -111,6 +111,83 @@ def test_delete_missing_returns_404(api_client):
     assert client.delete("/api/v1/menu/none").status_code == 404
 
 
+# ---- Recipes (ingredients + quantities from inventory) --------------------
+
+def test_create_with_recipe_roundtrips(api_client):
+    """T-B1: create with a recipe round-trips both ingredients with exact qty."""
+    client, _ = api_client
+    recipe = [
+        {"inventory_id": "tomate", "qty": 0.15},
+        {"inventory_id": "tortilla", "qty": 2},
+    ]
+    create = client.post("/api/v1/menu", json=_payload(recipe=recipe))
+    assert create.status_code == 201
+    fetched = client.get("/api/v1/menu/taco-1").json()
+    assert fetched["recipe"] == [
+        {"inventory_id": "tomate", "qty": 0.15},
+        {"inventory_id": "tortilla", "qty": 2.0},
+    ]
+
+
+def test_create_without_recipe_defaults_to_empty(api_client):
+    """T-B2: create WITHOUT a recipe yields recipe == []."""
+    client, _ = api_client
+    create = client.post("/api/v1/menu", json=_payload())
+    assert create.status_code == 201
+    assert client.get("/api/v1/menu/taco-1").json()["recipe"] == []
+
+
+def test_put_recipe_replaces_whole_list(api_client):
+    """T-B3: PUT recipe=[...] replaces the entire stored list."""
+    client, _ = api_client
+    client.post(
+        "/api/v1/menu",
+        json=_payload(recipe=[{"inventory_id": "tomate", "qty": 0.15}]),
+    )
+    response = client.put(
+        "/api/v1/menu/taco-1",
+        json={"recipe": [{"inventory_id": "queso", "qty": 0.05}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["recipe"] == [{"inventory_id": "queso", "qty": 0.05}]
+
+
+def test_put_empty_recipe_clears_it(api_client):
+    """T-B4: PUT recipe=[] clears the recipe to []."""
+    client, _ = api_client
+    client.post(
+        "/api/v1/menu",
+        json=_payload(recipe=[{"inventory_id": "tomate", "qty": 0.15}]),
+    )
+    response = client.put("/api/v1/menu/taco-1", json={"recipe": []})
+    assert response.status_code == 200
+    assert response.json()["recipe"] == []
+
+
+def test_put_without_recipe_key_leaves_recipe_untouched(api_client):
+    """T-B5: a PUT of an unrelated field with NO recipe key leaves it untouched."""
+    client, _ = api_client
+    recipe = [{"inventory_id": "tomate", "qty": 0.15}]
+    client.post("/api/v1/menu", json=_payload(recipe=recipe))
+    response = client.put("/api/v1/menu/taco-1", json={"price": 250.0})
+    assert response.status_code == 200
+    assert response.json()["price"] == 250.0
+    assert response.json()["recipe"] == recipe
+
+
+def test_create_with_unknown_inventory_id_stored_verbatim(api_client):
+    """T-B6: a recipe referencing a non-existent inventory_id is stored verbatim."""
+    client, _ = api_client
+    create = client.post(
+        "/api/v1/menu",
+        json=_payload(recipe=[{"inventory_id": "no-existe", "qty": 1}]),
+    )
+    assert create.status_code == 201
+    assert client.get("/api/v1/menu/taco-1").json()["recipe"] == [
+        {"inventory_id": "no-existe", "qty": 1.0}
+    ]
+
+
 # ---- Service-level safety net ---------------------------------------------
 
 def test_service_get_missing_raises_404(mongo_test_db):
