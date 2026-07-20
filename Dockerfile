@@ -45,20 +45,14 @@ FROM base AS prod
 
 ENV ENVIRONMENT=production
 
-# Coolify's deploy gate runs a curl-based healthcheck INSIDE the container, so
-# curl must be present in the prod image. Install it as root before dropping to
-# appuser, minimally and without leaving the apt cache behind.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY app ./app
 RUN chown -R appuser:appuser /app
 
 USER appuser
 
-# Baked-in healthcheck probes /healthz (the static {"status":"ok"} endpoint).
-# Kept stdlib-only (urllib) so it does not depend on curl being installed.
+# Stdlib-only healthcheck (urllib) probing the static /healthz endpoint. The
+# Coolify deploy gate runs this inside a python-slim container that ships
+# NEITHER curl NOR wget, so the probe must not depend on either.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=4).status == 200 else 1)"]
 

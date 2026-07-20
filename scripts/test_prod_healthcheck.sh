@@ -6,7 +6,8 @@ set -euo pipefail
 #
 # Verifies the production Docker image so the Coolify deploy gate stops failing:
 #   T-H1  the prod target builds
-#   T-H2  curl is present in the image (Coolify's gate runs curl in-container)
+#   T-H2  curl is NOT present in the image (stdlib urllib only, per the
+#         gosjoseph-backend pattern — python-slim ships neither curl nor wget)
 #   T-H3  the baked-in Docker HEALTHCHECK points at /healthz, not /api/health
 #   T-H4  the container reaches "healthy" and /healthz answers {"status":"ok"}
 #
@@ -44,12 +45,12 @@ else
   exit 1
 fi
 
-# --- T-H2: curl exists in the image ---------------------------------------
-echo "== T-H2: curl present in image =="
+# --- T-H2: curl is absent from the image -----------------------------------
+echo "== T-H2: curl absent from image =="
 if docker run --rm --entrypoint sh "$IMAGE" -c "command -v curl" >/dev/null 2>&1; then
-  pass "T-H2 curl is installed"
+  fail "T-H2 curl is present in the image (should be stdlib urllib only)"
 else
-  fail "T-H2 curl is missing from the image"
+  pass "T-H2 curl is absent (urllib-only healthcheck, as expected)"
 fi
 
 # --- T-H3: HEALTHCHECK references /healthz and not /api/health ------------
@@ -90,7 +91,7 @@ else
   docker logs "$CONTAINER" 2>&1 | tail -30 || true
 fi
 
-body="$(docker exec "$CONTAINER" curl -fsS http://localhost:8000/healthz 2>/dev/null || true)"
+body="$(docker exec "$CONTAINER" python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/healthz', timeout=4).read().decode())" 2>/dev/null || true)"
 echo "  /healthz body = $body"
 if [[ "$body" == '{"status":"ok"}' ]]; then
   pass "T-H4b /healthz returned {\"status\":\"ok\"}"
